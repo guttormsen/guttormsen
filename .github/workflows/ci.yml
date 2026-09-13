@@ -2,7 +2,8 @@ name: Test og publiser
 
 on:
   push:
-    branches: [main]
+    # Utviklingsgrenen publiseres også, så siden kan prøves før den slås sammen.
+    branches: [main, 'claude/**']
   pull_request:
   workflow_dispatch:
 
@@ -35,7 +36,7 @@ jobs:
   deploy:
     name: Publiser til GitHub Pages
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
