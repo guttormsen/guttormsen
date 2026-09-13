@@ -140,6 +140,7 @@ try {
   }
 
   check('appen åpner på turforslag', await page.locator('.tab[data-tab="finn"].is-active').count() === 1);
+  check('filterbrikkene tar ikke plass fra start', (await page.locator('.filters').count()) === 0);
   check('angre og tøm er skjult til man tegner', await page.locator('#draw-tools').isHidden());
 
   /* Bakgrunnskart fra Kartverket */
@@ -184,6 +185,9 @@ try {
   check('kortene får stigning og tid', /opp/.test(facts ?? ''), (facts ?? '').trim());
 
   /* Filtrering */
+  await page.click('.chip--toggle:has-text("Filtre")');
+  await page.waitForSelector('.filters', { timeout: 5000 });
+  check('filtrene er skjult til man ber om dem', true);
   await page.click('.chip--toggle:has-text("Kort tur")');
   await page.waitForTimeout(300);
   const shortOnly = await page.evaluate(() =>
@@ -267,7 +271,10 @@ try {
     trailPick.x > 20 && trailPick.y > 20 && trailPick.x < mapBox.width - 20 && trailPick.y < mapBox.height - 20;
 
   if (insideMap) {
-    await page.mouse.move(mapBox.x + trailPick.x, mapBox.y + trailPick.y);
+    // En ekte peker beveger seg i mange små steg inn i kartet. Ett enkelt hopp
+    // fra panelet gir ingen mousemove i det hele tatt, så vi drar pekeren dit.
+    await page.mouse.move(mapBox.x + 20, mapBox.y + 20);
+    await page.mouse.move(mapBox.x + trailPick.x, mapBox.y + trailPick.y, { steps: 8 });
     await page.waitForTimeout(300);
     const label = await page.locator('#trail-label').textContent();
     check('stien under pekeren får navn', /trykk for å velge/.test(label ?? ''), (label ?? '').slice(0, 46));
@@ -287,6 +294,18 @@ try {
     const chosen = await page.evaluate(() => window.lykkeligtur.state.trip.name);
     check('velg denne laster hele turen', chosen === trailPick.name, chosen);
     check('startknappen dukker opp i kartet', await page.locator('#btn-start').isVisible());
+
+    // Rekkefølgen i stilarket har før gjort knappen hvit på hvitt. Teksten må
+    // skille seg fra bakgrunnen, ellers ser man bare en tom pille i kartet.
+    const startLook = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector('#btn-start'));
+      return { background: style.backgroundColor, color: style.color };
+    });
+    check(
+      'startknappen er grønn med lesbar tekst',
+      startLook.background !== startLook.color && !/rgba\(0, 0, 0, 0\)/.test(startLook.background),
+      `${startLook.background} / ${startLook.color}`,
+    );
   } else {
     check('trykk på stien viser den i kartet', false, 'fant ingen sti innenfor kartutsnittet');
   }
@@ -473,13 +492,50 @@ try {
   await goToTestView(mobile);
   await mobile.waitForTimeout(1500);
 
-  const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  check('ingen vannrett rulling på mobil', overflow <= 1, `${overflow} px`);
+  await mobile.waitForSelector('.card', { timeout: 120000 });
+  await mobile.waitForTimeout(1500);
+
+  const overflow = await mobile.evaluate(() => ({
+    x: document.documentElement.scrollWidth - window.innerWidth,
+    y: document.documentElement.scrollHeight - window.innerHeight,
+  }));
+  check('ingen rulling av selve siden på mobil', overflow.x <= 1 && overflow.y <= 1, `${overflow.x} x ${overflow.y} px`);
   check('fanene er synlige i sammenslått bunnark', await mobile.locator('.tab[data-tab="finn"]').isVisible());
 
+  // Sammenslått skal arket vise resultater, ikke bare knapper.
+  const peek = await mobile.evaluate(() => {
+    const cards = [...document.querySelectorAll('.card')];
+    const synlig = cards.filter((c) => c.getBoundingClientRect().top < window.innerHeight);
+    return { state: document.querySelector('#panel').dataset.sheet, cards: synlig.length };
+  });
+  check('sammenslått ark viser første turkort', peek.state === 'peek' && peek.cards >= 1, `${peek.cards} kort synlig`);
+
+  const grab = await mobile.locator('#sheet-grab').boundingBox();
+  await mobile.mouse.move(grab.x + grab.width / 2, grab.y + 12);
+  await mobile.mouse.down();
+  await mobile.mouse.move(grab.x + grab.width / 2, grab.y - 320, { steps: 12 });
+  await mobile.mouse.up();
+  await mobile.waitForTimeout(600);
+  const dragged = await mobile.evaluate(() => ({
+    state: document.querySelector('#panel').dataset.sheet,
+    cards: [...document.querySelectorAll('.card')].filter((c) => c.getBoundingClientRect().top < window.innerHeight).length,
+  }));
+  check('bunnarket kan dras opp', dragged.state !== 'peek' && dragged.cards > peek.cards, `${dragged.state}, ${dragged.cards} kort`);
+
+  // Knappene i kartet legger seg over arket ved å lese denne verdien.
+  const sheetCover = await mobile.evaluate(() => ({
+    declared: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sheet-cover')),
+    actual: Math.round(window.innerHeight - document.querySelector('#panel').getBoundingClientRect().top),
+  }));
+  check(
+    'kartknappene vet hvor mye arket dekker',
+    Math.abs(sheetCover.declared - sheetCover.actual) <= 2,
+    `${sheetCover.declared} mot ${sheetCover.actual} px`,
+  );
+
   await mobile.click('#sheet-handle');
-  await mobile.waitForTimeout(400);
-  check('bunnarket kan åpnes', (await mobile.locator('#panel.is-open').count()) === 1);
+  await mobile.waitForTimeout(500);
+  check('trykk på håndtaket slår arket sammen', (await mobile.evaluate(() => document.querySelector('#panel').dataset.sheet)) === 'peek');
 
   const tapTargets = await mobile.evaluate(() =>
     [...document.querySelectorAll('.tab, .map-btn, .pill, .btn')]
@@ -487,9 +543,8 @@ try {
       .map((node) => Math.round(node.getBoundingClientRect().height)),
   );
   const smallest = Math.min(...tapTargets);
-  check('trykkflatene er store nok', smallest >= 36, `minste ${smallest} px av ${tapTargets.length}`);
+  check('trykkflatene er store nok', smallest >= 42, `minste ${smallest} px av ${tapTargets.length}`);
 
-  await mobile.waitForSelector('.card', { timeout: 120000 });
   check('turforslag virker på mobil', (await mobile.locator('.card').count()) > 3);
   await mobile.screenshot({ path: join(SHOTS, 'mobil.png') });
   await phone.close();

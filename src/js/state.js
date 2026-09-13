@@ -61,11 +61,15 @@ export const state = {
     box: null,
   },
   filters: { ...DEFAULT_FILTERS },
+  /** Om filterbrikkene er brettet ut. Sammenslått gir plass til resultatene. */
+  filtersOpen: false,
   /** Bilder og stedsbeskrivelse for turen som er valgt. */
   photos: [],
   article: null,
-  /** Turforslaget som vises i kartet akkurat nå, før man har valgt det. */
+  /** Turforslaget som vises som kort over kartet, før man har valgt det. */
   preview: null,
+  /** Turen man peker på i lista. Bare en markering i kartet, ikke et kort. */
+  hoveredCard: null,
   /** Kollektivreiser til startpunktet. */
   journeys: null,
 

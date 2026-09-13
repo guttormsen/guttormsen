@@ -59,6 +59,9 @@
           >
             <span aria-hidden="true">▤</span><span class="visually-hidden">Kartlag</span>
           </button>
+          <button id="btn-draw" class="map-btn" type="button" title="Tegn din egen rute" aria-pressed="false">
+            <span aria-hidden="true">✏️</span><span class="visually-hidden">Tegn din egen rute</span>
+          </button>
         </div>
 
         <div id="layer-popover" class="popover" role="dialog" aria-label="Kartlag" hidden></div>
@@ -75,9 +78,6 @@
           <button id="btn-search-here" class="pill pill--action" type="button" hidden>
             <span aria-hidden="true">🔍</span> Finn turer her
           </button>
-          <button id="btn-draw" class="pill" type="button" aria-pressed="false">
-            <span aria-hidden="true">✏️</span> <span id="btn-draw-label">Tegn selv</span>
-          </button>
           <div id="draw-tools" class="draw-tools" hidden>
             <button id="btn-undo" class="pill" type="button" title="Angre siste punkt">
               <span aria-hidden="true">↩</span> Angre
@@ -89,25 +89,27 @@
         </div>
       </div>
 
-      <aside id="panel" class="panel" aria-label="Turpanel">
-        <button id="sheet-handle" class="sheet-handle" type="button" aria-expanded="false" aria-controls="panel">
-          <span class="sheet-handle__grip" aria-hidden="true"></span>
-          <span class="visually-hidden">Dra for å vise eller skjule panelet</span>
-        </button>
+      <aside id="panel" class="panel" aria-label="Turpanel" data-sheet="peek">
+        <div id="sheet-grab" class="sheet-grab">
+          <button id="sheet-handle" class="sheet-handle" type="button" aria-expanded="false" aria-controls="panel">
+            <span class="sheet-handle__grip" aria-hidden="true"></span>
+            <span class="visually-hidden">Dra opp eller ned for å vise mer eller mindre</span>
+          </button>
 
-        <section id="nav-bar" class="navbar" aria-label="Turen underveis" aria-live="polite" hidden></section>
+          <section id="nav-bar" class="navbar" aria-label="Turen underveis" aria-live="polite" hidden></section>
 
-        <nav class="tabs" aria-label="Seksjoner">
-          <button class="tab is-active" type="button" data-tab="finn" aria-selected="true">
-            <span aria-hidden="true">🧭</span> Finn tur
-          </button>
-          <button class="tab" type="button" data-tab="turen" aria-selected="false">
-            <span aria-hidden="true">🥾</span> Turen
-          </button>
-          <button class="tab" type="button" data-tab="dagbok" aria-selected="false">
-            <span aria-hidden="true">📖</span> Dagbok
-          </button>
-        </nav>
+          <nav class="tabs" aria-label="Seksjoner">
+            <button class="tab is-active" type="button" data-tab="finn" aria-selected="true">
+              <span aria-hidden="true">🧭</span> Finn tur
+            </button>
+            <button class="tab" type="button" data-tab="turen" aria-selected="false">
+              <span aria-hidden="true">🥾</span> Turen
+            </button>
+            <button class="tab" type="button" data-tab="dagbok" aria-selected="false">
+              <span aria-hidden="true">📖</span> Dagbok
+            </button>
+          </nav>
+        </div>
 
         <div id="route-header" class="route-header" hidden>
           <section class="stats" id="stats" aria-live="polite"></section>

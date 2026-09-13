@@ -20,6 +20,7 @@ import { createMap } from './map.js';
 import { createProfile } from './profile.js';
 import { createSearch } from './search.js';
 import { createSnapper, SNAP_REASONS } from './snap.js';
+import { createSheet } from './sheet.js';
 import { buildGpx, parseGpx, safeFilename } from './gpx.js';
 import { copyText, downloadText, toast } from './ui.js';
 import { DEFAULT_FILTERS, buildTrips, enrichTrip, filterTrips, sampleForCard, surpriseMe } from './trips.js';
@@ -70,6 +71,8 @@ const view = createMap($('#map'), {
   onMapPicked: (point, metersPerPixel) => {
     const hit = findTrailAt(trailIndex, point, metersPerPixel * TAP_TOLERANCE_PX);
     if (hit) {
+      // Arket ned, så man ser stien man nettopp trykket på.
+      if (isSheet()) sheet.go('peek');
       showPreview(hit.trip);
       return;
     }
@@ -261,7 +264,7 @@ function setDrawing(on) {
   const button = $('#btn-draw');
   button.classList.toggle('is-on', on);
   button.setAttribute('aria-pressed', String(on));
-  $('#btn-draw-label').textContent = on ? 'Ferdig' : S.state.trip.waypoints.length ? 'Rediger' : 'Tegn selv';
+  button.title = on ? 'Ferdig med å tegne' : S.state.trip.waypoints.length ? 'Rediger ruta' : 'Tegn din egen rute';
   $('#draw-tools').hidden = !on;
   hoveredTrail = null;
   view.highlightTrail(null);
@@ -278,9 +281,11 @@ let previewRun = 0;
 
 /** Viser stien man trykket på, uten å forstyrre resten av grensesnittet. */
 function showPreview(trip) {
+  S.state.hoveredCard = null;
   S.state.preview = trip;
   view.showSuggestion(trip.points);
-  view.fitRoute(trip.points, { paddingBottomRight: [0, 240] });
+  // fitRoute tar selv hensyn til hvor mye bunnarket dekker.
+  view.fitRoute(trip.points);
   renderPreview();
   if (trip.ascent == null) loadPreviewElevation(trip);
 }
@@ -799,6 +804,11 @@ const handlers = {
   /* Finn tur */
   onSearchHere: () => loadDiscovery(),
   onNearMe: () => findNearMe(),
+  onToggleFilters: () => {
+    S.state.filtersOpen = !S.state.filtersOpen;
+    renderPane('finn');
+    if (S.state.filtersOpen) openSheet(true);
+  },
   onToggleLength: (id) => {
     const list = S.state.filters.lengths;
     S.state.filters.lengths = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -834,8 +844,14 @@ const handlers = {
     S.state.filters = { ...DEFAULT_FILTERS };
     applyFilters();
   },
+  /**
+   * Peker man på et kort i lista, markeres turen i kartet. Det er noe annet
+   * enn forhåndsvisningen man får ved å trykke i kartet – blandes de, forsvinner
+   * navnelappen og startknappen på uforståelig vis.
+   */
   onPreviewTrip: (trip) => {
-    S.state.preview = trip;
+    if (S.state.preview) return;
+    S.state.hoveredCard = trip;
     view.showSuggestion(trip?.points ?? null);
   },
   onPickTrip: (trip) => pickTrail(trip),
@@ -948,7 +964,7 @@ const isLoop = (summary) => {
 /* ---------- Tegning av panelet ---------- */
 
 const PANES = {
-  finn: () => panels.renderDiscover(S.state.discovery, S.state.filters, handlers),
+  finn: () => panels.renderDiscover(S.state.discovery, S.state.filters, S.state.filtersOpen, handlers),
   turen: () =>
     panels.renderTrip(
       {
@@ -1001,11 +1017,6 @@ function renderAll() {
   const hasRoute = Boolean(S.state.summary);
   $('#route-header').hidden = !hasRoute || activeTab === 'dagbok';
   $('#panel-footer').hidden = !hasRoute;
-  $('#btn-draw-label').textContent = view.isDrawing()
-    ? 'Ferdig'
-    : S.state.trip.waypoints.length
-      ? 'Rediger'
-      : 'Tegn selv';
 
   if (hasRoute) renderStats();
   renderNavBar();
@@ -1028,7 +1039,10 @@ function selectTab(name, { open = false } = {}) {
     button.setAttribute('aria-selected', String(selected));
   }
   for (const pane of document.querySelectorAll('.pane')) pane.hidden = pane.dataset.pane !== name;
-  if (name !== 'finn' && !S.state.preview) view.showSuggestion(null);
+  if (name !== 'finn' && !S.state.preview) {
+    S.state.hoveredCard = null;
+    view.showSuggestion(null);
+  }
   if (open) openSheet(true);
   renderAll();
 }
@@ -1043,12 +1057,37 @@ for (const button of document.querySelectorAll('.tab')) {
 const panel = $('#panel');
 const sheetHandle = $('#sheet-handle');
 
-function openSheet(open = true) {
-  panel.classList.toggle('is-open', open);
-  sheetHandle.setAttribute('aria-expanded', String(open));
-  setTimeout(() => view.invalidate(), 260);
+/**
+ * Hvor mye av arket som er synlig i sammenslått stilling. Nok til at fanene og
+ * det første turkortet vises – et ark som bare viser filterknapper forteller
+ * ingenting om hva som finnes.
+ */
+function peekHeight() {
+  const grab = $('#sheet-grab').offsetHeight;
+  // Turlinja ligger i dragflaten under turen; da trengs ingen ekstra plass.
+  const extra = S.state.navigation.active ? 8 : 200;
+  const safe = Number.parseFloat(getComputedStyle(document.body).getPropertyValue('--safe-bottom')) || 0;
+  return Math.min(window.innerHeight * 0.45, grab + extra + safe);
 }
-sheetHandle.addEventListener('click', () => openSheet(!panel.classList.contains('is-open')));
+
+/** Arket dras bare på mobil; på skrivebord er panelet en fast spalte. */
+const isSheet = () => !window.matchMedia('(min-width: 900px)').matches;
+
+const sheet = createSheet(panel, $('#sheet-grab'), {
+  peekHeight,
+  isActive: isSheet,
+  onChange: (state) => {
+    sheetHandle.setAttribute('aria-expanded', String(state !== 'peek'));
+    setTimeout(() => view.invalidate(), 280);
+  },
+});
+
+/** Åpner arket minst så mye – brukes når noe nytt skal leses. */
+const openSheet = (open = true) => {
+  if (!isSheet()) return;
+  if (open) sheet.atLeast('half');
+  else sheet.go('peek');
+};
 
 /* ---------- Kartlag ---------- */
 
@@ -1332,4 +1371,4 @@ const clean = (object) =>
 boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
-window.lykkeligtur = { state: S.state, view, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };
+window.lykkeligtur = { state: S.state, view, sheet, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };

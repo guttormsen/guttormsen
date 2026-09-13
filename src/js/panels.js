@@ -290,66 +290,108 @@ const gradeFilters = [
   { id: 'ekspert', ...GRADES.S },
 ];
 
-export function renderDiscover(discovery, filters, handlers) {
+export function renderDiscover(discovery, filters, filtersOpen, handlers) {
   const nodes = [];
+  const activeCount =
+    filters.lengths.length +
+    filters.grades.length +
+    filters.features.length +
+    (filters.shape ? 1 : 0) +
+    (filters.special ? 1 : 0) +
+    (filters.markedOnly ? 1 : 0) +
+    (filters.maxMinutes != null ? 1 : 0);
 
-  /* Filtre */
+  /* Én kompakt rad øverst; filtrene tar ikke plass før man vil ha dem. */
   nodes.push(
-    el('div', { class: 'filters' }, [
-      el('div', { class: 'chips', role: 'group', 'aria-label': 'Hvor lang tur' },
-        LENGTH_BUCKETS.map((bucket) =>
-          chip(bucket.label, filters.lengths.includes(bucket.id), () => handlers.onToggleLength(bucket.id), {
-            icon: bucket.icon,
-            title: bucket.hint,
-          }),
-        ),
-      ),
-      el('div', { class: 'chips', role: 'group', 'aria-label': 'Hva vil du ha med' }, [
-        chip('Under 1 time', filters.maxMinutes === 60, () => handlers.onQuickTime(60), {
-          icon: '⏱️',
-          title: 'Turer som tar under en time',
-        }),
-        ...['bading', 'bål', 'rasteplass', 'utsikt', 'kollektiv', 'hc', 'toalett', 'lek'].map((id) =>
-          chip(FEATURES[id].label, filters.features.includes(id), () => handlers.onToggleFeature(id), {
-            icon: FEATURES[id].icon,
-            title: FEATURES[id].hint ?? `Turer med ${FEATURES[id].label.toLowerCase()} langs ruta`,
-          }),
-        ),
+    el('div', { class: 'result-bar' }, [
+      el('span', { class: 'result-bar__count' }, [
+        discovery.loading
+          ? 'Leter etter turer …'
+          : discovery.searched && discovery.total
+            ? `${discovery.visible.length} av ${discovery.total} turer`
+            : '',
       ]),
-      el('div', { class: 'chips', role: 'group', 'aria-label': 'Vanskegrad' }, [
-        ...gradeFilters.map((grade) =>
-          el('button', {
-            type: 'button',
-            class: `chip chip--toggle chip--dot${filters.grades.includes(grade.id) ? ' is-on' : ''}`,
-            style: `--dot:${grade.color}`,
-            'aria-pressed': String(filters.grades.includes(grade.id)),
-            title: grade.hint,
-            text: grade.label,
-            onclick: () => handlers.onToggleGrade(grade.id),
-          }),
-        ),
-        chip('Rundtur', filters.shape === 'rundtur', () => handlers.onShape('rundtur'), {
-          icon: '🔄',
-          title: 'Turer som ender der de startet',
+      el('button', {
+        class: `chip chip--toggle${activeCount ? ' is-on' : ''}`,
+        type: 'button',
+        'aria-expanded': String(filtersOpen),
+        onclick: handlers.onToggleFilters,
+      }, [`⚙ Filtre${activeCount ? ` (${activeCount})` : ''}`]),
+      discovery.visible.length > 1 &&
+        el('button', {
+          class: 'chip chip--toggle',
+          type: 'button',
+          title: 'Plukk en tilfeldig tur',
+          text: '🎲',
+          'aria-label': 'Overrask meg med en tilfeldig tur',
+          onclick: handlers.onSurprise,
         }),
-        chip('Merket', filters.markedOnly, handlers.onToggleMarked, {
-          icon: '🚩',
-          title: 'Bare ruter som er merket i terrenget',
-        }),
-        ...Object.values(SPECIAL_TYPES).map((type) =>
-          chip(type.label, filters.special === type.id, () => handlers.onSpecial(type.id), { icon: type.icon }),
-        ),
-      ]),
-      hasActiveFilters(filters) &&
-        el('button', { class: 'linkish linkish--small', type: 'button', text: 'Nullstill filtre', onclick: handlers.onResetFilters }),
     ]),
   );
+
+  if (filtersOpen) {
+    nodes.push(
+      el('div', { class: 'filters' }, [
+        el('div', { class: 'chips', role: 'group', 'aria-label': 'Hvor lang tur' },
+          LENGTH_BUCKETS.map((bucket) =>
+            chip(bucket.label, filters.lengths.includes(bucket.id), () => handlers.onToggleLength(bucket.id), {
+              icon: bucket.icon,
+              title: bucket.hint,
+            }),
+          ),
+        ),
+        el('div', { class: 'chips', role: 'group', 'aria-label': 'Hva vil du ha med' }, [
+          chip('Under 1 time', filters.maxMinutes === 60, () => handlers.onQuickTime(60), {
+            icon: '⏱️',
+            title: 'Turer som tar under en time',
+          }),
+          ...['bading', 'bål', 'rasteplass', 'utsikt', 'kollektiv', 'hc', 'toalett', 'lek'].map((id) =>
+            chip(FEATURES[id].label, filters.features.includes(id), () => handlers.onToggleFeature(id), {
+              icon: FEATURES[id].icon,
+              title: FEATURES[id].hint ?? `Turer med ${FEATURES[id].label.toLowerCase()} langs ruta`,
+            }),
+          ),
+        ]),
+        el('div', { class: 'chips', role: 'group', 'aria-label': 'Vanskegrad og type' }, [
+          ...gradeFilters.map((grade) =>
+            el('button', {
+              type: 'button',
+              class: `chip chip--toggle chip--dot${filters.grades.includes(grade.id) ? ' is-on' : ''}`,
+              style: `--dot:${grade.color}`,
+              'aria-pressed': String(filters.grades.includes(grade.id)),
+              title: grade.hint,
+              text: grade.label,
+              onclick: () => handlers.onToggleGrade(grade.id),
+            }),
+          ),
+          chip('Rundtur', filters.shape === 'rundtur', () => handlers.onShape('rundtur'), {
+            icon: '🔄',
+            title: 'Turer som ender der de startet',
+          }),
+          chip('Merket', filters.markedOnly, handlers.onToggleMarked, {
+            icon: '🚩',
+            title: 'Bare ruter som er merket i terrenget',
+          }),
+          ...Object.values(SPECIAL_TYPES).map((type) =>
+            chip(type.label, filters.special === type.id, () => handlers.onSpecial(type.id), { icon: type.icon }),
+          ),
+        ]),
+        hasActiveFilters(filters) &&
+          el('button', {
+            class: 'linkish linkish--small',
+            type: 'button',
+            text: 'Nullstill filtre',
+            onclick: handlers.onResetFilters,
+          }),
+      ]),
+    );
+  }
 
   /* Tilstander */
   if (discovery.loading) {
     nodes.push(
       el('p', { class: 'hint', text: 'Leter i den nasjonale rutebasen. Det tar gjerne ti sekunder første gang – etterpå ligger området i minnet.' }),
-      el('div', { class: 'skeletons' }, Array.from({ length: 4 }, () => el('div', { class: 'skeleton' }))),
+      el('div', { class: 'skeletons' }, Array.from({ length: 3 }, () => el('div', { class: 'skeleton' }))),
     );
     return nodes;
   }
@@ -405,19 +447,6 @@ export function renderDiscover(discovery, filters, handlers) {
     );
     return nodes;
   }
-
-  nodes.push(
-    el('div', { class: 'result-bar' }, [
-      el('span', { class: 'result-bar__count', text: `${visible.length} av ${total} turer` }),
-      el('button', {
-        class: 'btn btn--dice',
-        type: 'button',
-        text: '🎲 Overrask meg',
-        title: 'Plukk en tilfeldig tur',
-        onclick: handlers.onSurprise,
-      }),
-    ]),
-  );
 
   nodes.push(el('ul', { class: 'cards' }, visible.map((trip) => tripCard(trip, handlers))));
 

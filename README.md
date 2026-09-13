@@ -90,6 +90,26 @@ Når man tegner selv, følger ruta stier automatisk. En rett strek over stup og
 vann er nesten aldri det noen mener med et trykk i kartet, så «følg sti» er på
 som standard og kan slås av under Avansert.
 
+### Ett ark, tre stillinger
+
+På mobil ligger alt innholdet i et ark nederst. Det kan **dras med fingeren**,
+kastes opp eller ned, og står i tre stillinger:
+
+| Stilling | Hva du ser |
+|---|---|
+| Sammenslått | Kartet, fanene og det første turkortet – nok til å skjønne hva som finnes |
+| Halvveis | Turlista eller turen, med kartet fortsatt synlig over |
+| Helt oppe | Bare innholdet, for lesing |
+
+Hele toppen av arket er dragflate – håndtaket, fanene og turlinja under turen.
+Det er mye lettere å treffe enn en tynn strek. Ett trykk på håndtaket slår
+arket opp eller sammen.
+
+Knappene som ligger i kartet – «Start turen», navnet på stien under fingeren,
+forhåndsvisningen og meldingene – vet hvor høyt arket står og legger seg rett
+over det. De blir aldri liggende bak arket. Det samme gjelder kartutsnittet:
+når en tur vises, får den plass i den delen av kartet du faktisk ser.
+
 ### Enkelt foran, avansert bak
 
 Det som gjelder de fleste turer – marsjfart og når du starter – ligger framme.
@@ -231,6 +251,7 @@ src/js/
   trips.js              turforslag: sy sammen ruter, filtrere og sortere
   journal.js            turdagbok, merker og sammenligninger
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
+  sheet.js              bunnarket på mobil: drag, kast og tre stillinger
   trailhit.js           finner hvilken sti som ligger under fingeren
   navigate.js           hvor du er på ruta, hva som gjenstår, og hvilken vei
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
@@ -247,7 +268,7 @@ src/js/
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
 test/                   163 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 53 sjekker mot ekte tjenester
+test/e2e/smoke.mjs      røyktest i Chromium, 60 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen
@@ -263,9 +284,12 @@ er en ren funksjon, og det er de som er dekket av testene.
   søket følger ARIA-mønsteret for combobox.
 - Lys og mørk modus følger systemet. Fargene har kontrast nok til å leses ute i
   sollys.
-- Mobil først: bunnark som kan dras opp, trykkflater på minst 38 px, filterrader
+- Mobil først: bunnark som kan dras, trykkflater på minst 42 px, filterrader
   som rulles sidelengs med uttoning i kanten, ingen vannrett rulling. Røyktesten
   måler både trykkflatene og rullingen.
+- Lagt til på hjemskjerm har appen ingen nettleserlinje. Innholdet holder seg
+  innenfor `env(safe-area-inset-*)`, så verken toppen eller hjemindikatoren
+  spiser noe.
 - `prefers-reduced-motion` slår av animasjonene.
 - Tjenestene er fellesgoder, og appen behandler dem deretter: svar
   mellomlagres, høydeoppslag går i bolker på 50 punkter, og Overpass prøves mot

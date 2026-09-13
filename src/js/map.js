@@ -247,6 +247,19 @@ export function createMap(container, handlers = {}) {
 
   /* ---------- Publikt grensesnitt ---------- */
 
+  /**
+   * Hvor mye av kartet bunnarket dekker. Turen skal få plass i det man
+   * faktisk ser, ikke bak arket.
+   */
+  function coveredBySheet() {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--sheet-cover');
+    const covered = Number.parseFloat(raw);
+    if (!Number.isFinite(covered) || covered <= 0) return 0;
+    const height = container.getBoundingClientRect().height;
+    const overlap = covered - (window.innerHeight - container.getBoundingClientRect().bottom);
+    return Math.max(0, Math.min(overlap, height * 0.5));
+  }
+
   return {
     map,
     setBasemap,
@@ -256,13 +269,17 @@ export function createMap(container, handlers = {}) {
     drawPois,
 
     fitRoute(points, options = {}) {
+      const hidden = coveredBySheet();
       if (points.length === 1) {
         map.setView([points[0].lat, points[0].lon], Math.max(map.getZoom(), 13));
+        if (hidden) map.panBy([0, hidden / 2], { animate: false });
         return;
       }
       if (points.length < 2) return;
       map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lon])), {
-        padding: [50, 50],
+        // Bunnarket dekker nedre del av kartet. Uten dette havner turen bak det.
+        paddingTopLeft: [34, 34],
+        paddingBottomRight: [34, 34 + hidden],
         maxZoom: 15,
         ...options,
       });
@@ -270,6 +287,8 @@ export function createMap(container, handlers = {}) {
 
     flyTo(point, zoom = 14) {
       map.flyTo([point.lat, point.lon], zoom, { duration: 0.8 });
+      const hidden = coveredBySheet();
+      if (hidden) map.once('moveend', () => map.panBy([0, hidden / 2], { animate: false }));
     },
 
     /** Markerer et punkt langs ruta, brukt når musa er over høydeprofilen. */
