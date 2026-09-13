@@ -12,6 +12,7 @@ import { fetchFotruterForDiscovery } from './api/turrutebasen.js';
 import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear, searchPhotosByName } from './api/commons.js';
 import { articleMatches, attachPhotos, buildPhotoIndex, mergePhotos, photosForTrip, photosFromSearch } from './photos.js';
 import { attachFeatures } from './features.js';
+import { buildTrailIndex, findTrailAt } from './trailhit.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -48,27 +49,114 @@ let activeTab = 'finn';
  */
 const CARD_PHOTO_RADIUS_M = 800;
 
+/**
+ * Turrutene i kartutsnittet, klare til treffdeteksjon. Bygges når
+ * turforslagene lastes, slik at et trykk på en sti kan besvares uten nettverk.
+ */
+let trailIndex = null;
+let hoveredTrail = null;
+
+/** Hvor mange piksler unna en sti et trykk kan lande. Fingre er upresise. */
+const TAP_TOLERANCE_PX = 16;
+const HOVER_TOLERANCE_PX = 12;
+
 const view = createMap($('#map'), {
+  /** Trykk utenfor tegnemodus: velg stien man traff, ellers gjør ingenting. */
+  onMapPicked: (point, metersPerPixel) => {
+    const hit = findTrailAt(trailIndex, point, metersPerPixel * TAP_TOLERANCE_PX);
+    if (hit) {
+      pickTrail(hit.trip);
+      return;
+    }
+    // Ingen sti der. Å slippe en markør her ville bare vært i veien.
+    hintNoTrail();
+  },
   onMapClicked: (point) => S.addWaypoint(point),
+  onMapHover: (point, metersPerPixel) => {
+    const hit = point ? findTrailAt(trailIndex, point, metersPerPixel * HOVER_TOLERANCE_PX) : null;
+    if (hit?.trip.id === hoveredTrail?.id) return;
+    hoveredTrail = hit?.trip ?? null;
+    view.highlightTrail(hoveredTrail?.points ?? null);
+    showTrailLabel(hoveredTrail);
+  },
   onLineClicked: (point, segmentIndex) => S.insertWaypoint(legIndexForSegment(segmentIndex), point),
   onWaypointMoved: (id, point) => S.moveWaypoint(id, point),
   onWaypointClicked: (id) => S.removeWaypoint(id),
   onPoiClicked: (poi) => view.flyTo(poi, 15),
-  onMoveEnd: () => updateSearchHere(),
+  onMoveEnd: () => {
+    updateSearchHere();
+    maybeAutoSearch();
+  },
 });
 view.setBasemap(basemap);
 for (const [id, visible] of Object.entries(trailState)) view.setTrailLayer(id, visible);
 
 const profile = createProfile($('#profile'), { onHover: (point) => view.showHover(point) });
 
+/** Navnet på stien under pekeren, vist nederst i kartet. */
+function showTrailLabel(trip) {
+  const label = $('#trail-label');
+  if (view.isDrawing()) {
+    label.hidden = false;
+    label.textContent = 'Trykk i kartet for å legge til punkter';
+    return;
+  }
+  label.hidden = !trip;
+  if (trip) label.textContent = `${trip.name} – trykk for å velge`;
+}
+
+/** Sier fra én gang i blant at det ikke er noen merket sti akkurat der. */
+let lastHint = 0;
+function hintNoTrail() {
+  if (Date.now() - lastHint < 12000) return;
+  lastHint = Date.now();
+  const message = S.state.discovery.searched
+    ? 'Ingen merket sti akkurat der. Trykk «Tegn selv» for å lage din egen rute.'
+    : 'Zoom inn litt, så henter jeg turene i området.';
+  toast(message, {
+    action: S.state.discovery.searched ? { label: 'Tegn selv', onClick: () => setDrawing(true) } : undefined,
+  });
+}
+
+/* ---------- Tegnemodus ---------- */
+
+function setDrawing(on) {
+  view.setDrawing(on);
+  const button = $('#btn-draw');
+  button.classList.toggle('is-on', on);
+  button.setAttribute('aria-pressed', String(on));
+  $('#btn-draw-label').textContent = on ? 'Ferdig' : S.state.trip.waypoints.length ? 'Rediger' : 'Tegn selv';
+  $('#draw-tools').hidden = !on;
+  hoveredTrail = null;
+  view.highlightTrail(null);
+  showTrailLabel(null);
+  view.drawWaypoints(S.state.trip.waypoints);
+  if (on && !S.state.trip.waypoints.length) {
+    toast('Trykk i kartet for å sette startpunktet. Ruta følger stier av seg selv.');
+  }
+}
+
+/** Laster en tur fra kartet eller fra et turkort. */
+function pickTrail(trip) {
+  setDrawing(false);
+  view.highlightTrail(null);
+  view.showSuggestion(null);
+  hoveredTrail = null;
+  showTrailLabel(null);
+  S.setTrip(S.tripFromSuggestion(trip), 'load');
+  view.fitRoute(trip.points);
+  selectTab('turen');
+  toast(`«${trip.name}» er lagt inn. Juster gjerne start og fart.`, { kind: 'ok' });
+}
+
 createSearch(
   { input: $('#search-input'), listbox: $('#search-results'), status: $('#search-status') },
   {
     onPick: (place) => {
       view.flyTo(place, 13);
-      // Etter et søk er det nesten alltid turforslag brukeren er ute etter.
+      // Etter et søk er det nesten alltid turforslag brukeren er ute etter;
+      // kartet står stille om et øyeblikk, og da søker appen av seg selv.
       selectTab('finn');
-      setTimeout(() => loadDiscovery(), 900);
     },
   },
 );
@@ -374,6 +462,9 @@ async function loadDiscovery() {
     discovery.all = buildTrips(segments);
     discovery.truncated = segments.length >= 1200;
     discovery.searched = true;
+    // Stiene blir trykkbare, og snappingen slipper å hente dem på nytt.
+    trailIndex = buildTrailIndex(discovery.all);
+    snapper.seed(segments);
     applyFilters();
     loadCardElevations(run);
     loadCardPhotos(run, box);
@@ -460,6 +551,19 @@ async function loadCardFeatures(run, box) {
   }
 }
 
+/**
+ * Kjører turforslag av seg selv første gang kartet står stille nær nok.
+ * Da er stiene trykkbare uten at man må be om det, men vi maser ikke om det
+ * igjen når brukeren panorerer videre – da dukker knappen opp i stedet.
+ */
+let autoSearched = false;
+const maybeAutoSearch = debounce(() => {
+  if (autoSearched || S.state.discovery.searched || S.state.discovery.loading) return;
+  if (view.zoom() < 11) return;
+  autoSearched = true;
+  loadDiscovery();
+}, 1200);
+
 /** Viser eller skjuler «Finn turer her» etter hvor kartet står. */
 function updateSearchHere() {
   const button = $('#btn-search-here');
@@ -517,20 +621,14 @@ const handlers = {
     S.state.preview = trip;
     view.showSuggestion(trip?.points ?? null);
   },
-  onPickTrip: (trip) => {
-    view.showSuggestion(null);
-    S.setTrip(S.tripFromSuggestion(trip), 'load');
-    view.fitRoute(trip.points);
-    selectTab('turen');
-    toast(`«${trip.name}» er lagt inn. Juster gjerne start og fart.`, { kind: 'ok' });
-  },
+  onPickTrip: (trip) => pickTrail(trip),
   onSurprise: () => {
     const trip = surpriseMe(S.state.discovery.visible);
     if (trip) handlers.onPickTrip(trip);
   },
   onDrawOwn: () => {
     selectTab('turen');
-    toast('Trykk i kartet for å sette startpunktet.');
+    setDrawing(true);
   },
   onGoDiscover: () => selectTab('finn'),
 
@@ -650,7 +748,11 @@ function renderAll() {
   const hasRoute = Boolean(S.state.summary);
   $('#route-header').hidden = !hasRoute || activeTab === 'dagbok';
   $('#panel-footer').hidden = !hasRoute;
-  $('#draw-tools').hidden = S.state.trip.waypoints.length === 0;
+  $('#btn-draw-label').textContent = view.isDrawing()
+    ? 'Ferdig'
+    : S.state.trip.waypoints.length
+      ? 'Rediger'
+      : 'Tegn selv';
 
   if (hasRoute) renderStats();
   render($('#panel-footer'), panels.renderFooter(S.state.summary, handlers).flat().filter(Boolean));
@@ -713,6 +815,8 @@ document.addEventListener('click', (event) => {
 
 $('#btn-search-here').addEventListener('click', () => loadDiscovery());
 
+$('#btn-draw').addEventListener('click', () => setDrawing(!view.isDrawing()));
+
 $('#btn-undo').addEventListener('click', () => {
   const last = S.state.trip.waypoints.at(-1);
   if (last) S.removeWaypoint(last.id);
@@ -723,6 +827,7 @@ $('#btn-clear').addEventListener('click', () => {
   // Ingen bekreftelsesdialog: det er raskere å angre enn å svare på et spørsmål.
   const previous = structuredClone(S.state.trip);
   S.resetTrip();
+  showTrailLabel(null);
   toast('Ruta er tømt.', {
     action: { label: 'Angre', onClick: () => S.setTrip(previous, 'load') },
   });
@@ -752,10 +857,7 @@ $('#btn-locate').addEventListener('click', () => {
       const first = myPosition == null;
       myPosition = point;
       view.showPosition(point);
-      if (first) {
-        view.flyTo(point, 13);
-        if (activeTab === 'finn' && !S.state.discovery.searched) setTimeout(() => loadDiscovery(), 1000);
-      }
+      if (first) view.flyTo(point, 13);
     },
     (error) => {
       $('#btn-locate').classList.remove('is-on');
@@ -877,7 +979,6 @@ S.on('trip', ({ reason }) => {
     renderAll();
     return;
   }
-  if (['add', 'insert', 'move'].includes(reason) && activeTab === 'finn') selectTab('turen');
   recompute(reason);
 });
 

@@ -338,6 +338,59 @@ button {
   margin-top: 0;
 }
 
+/* Navnet på stien under pekeren. */
+.trail-label {
+  position: absolute;
+  bottom: calc(var(--sheet-peek) + 12px);
+  left: 50%;
+  z-index: 700;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+@media (min-width: 900px) {
+  .trail-label {
+    bottom: 16px;
+  }
+}
+
+/* Kartet får pekefinger når en sti kan velges. */
+.map.is-pointing {
+  cursor: pointer;
+}
+
+/* I tegnemodus er trådkorset et signal om at trykk setter punkter. */
+.map.is-drawing {
+  cursor: crosshair;
+}
+
+.map.is-drawing::after {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  content: '';
+  box-shadow: inset 0 0 0 3px var(--green);
+}
+
+.pill.is-on {
+  color: #fff;
+  background: var(--green);
+  border-color: transparent;
+}
+
 .map-overlay {
   position: absolute;
   top: 12px;

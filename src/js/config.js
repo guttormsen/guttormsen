@@ -121,5 +121,9 @@ export const DEFAULT_OPTIONS = {
   packKg: 8,
   breaks: true,
   roundTrip: false,
-  snapToTrail: false,
+  /**
+   * Ruta følger stier med mindre man slår det av. En rett strek over stup og
+   * vann er nesten aldri det noen mener når de trykker i kartet.
+   */
+  snapToTrail: true,
 };

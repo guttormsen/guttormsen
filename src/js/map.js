@@ -113,6 +113,15 @@ export function createMap(container, handlers = {}) {
   });
   const suggestionEnds = L.layerGroup();
 
+  // Stien under pekeren, så det er tydelig at den kan trykkes på.
+  const hovered = L.polyline([], {
+    pane: 'route',
+    color: '#1c6fd4',
+    weight: 8,
+    opacity: 0.55,
+    lineCap: 'round',
+  });
+
   const hoverMarker = L.circleMarker([0, 0], {
     pane: 'route',
     radius: 7,
@@ -125,6 +134,11 @@ export function createMap(container, handlers = {}) {
   let positionMarker = null;
   let accuracyCircle = null;
   let currentLine = [];
+  /**
+   * Utenfor tegnemodus er kartet til for å se på. Da skal et trykk aldri
+   * etterlate en markør – det holder å komme borti skjermen.
+   */
+  let drawing = false;
 
   function waypointIcon(index, total) {
     const isStart = index === 0;
@@ -145,8 +159,10 @@ export function createMap(container, handlers = {}) {
     waypoints.forEach((waypoint, index) => {
       const marker = L.marker([waypoint.lat, waypoint.lon], {
         icon: waypointIcon(index, waypoints.length),
-        draggable: true,
-        keyboard: true,
+        // Punkter flyttes og fjernes bare når man har bedt om å redigere.
+        draggable: drawing,
+        interactive: drawing,
+        keyboard: drawing,
         title:
           waypoint.name ??
           (index === 0 ? 'Startpunkt' : index === waypoints.length - 1 ? 'Sluttpunkt' : `Punkt ${index}`),
@@ -200,13 +216,23 @@ export function createMap(container, handlers = {}) {
   map.on('moveend', () => handlers.onMoveEnd?.());
   map.on('zoomend', () => handlers.onMoveEnd?.());
 
+  map.on('mousemove', (event) => {
+    handlers.onMapHover?.({ lat: event.latlng.lat, lon: event.latlng.lng }, metersPerPixel());
+  });
+  map.on('mouseout', () => handlers.onMapHover?.(null, metersPerPixel()));
+
   map.on('click', (event) => {
     const point = { lat: event.latlng.lat, lon: event.latlng.lng };
-    // Klikk nær ruta setter inn et punkt i stedet for å forlenge den.
+
+    if (!drawing) {
+      handlers.onMapPicked?.(point, metersPerPixel());
+      return;
+    }
+
+    // I tegnemodus setter et klikk nær ruta inn et punkt i stedet for å forlenge den.
     if (currentLine.length > 1) {
       const hit = closestPointOnPath(point, currentLine);
-      const tolerance = metersPerPixel() * 12;
-      if (hit.distance < tolerance) {
+      if (hit.distance < metersPerPixel() * 12) {
         handlers.onLineClicked?.(hit.point, hit.index);
         return;
       }
@@ -281,6 +307,34 @@ export function createMap(container, handlers = {}) {
         positionMarker.setLatLng(latlng);
         accuracyCircle.setLatLng(latlng).setRadius(position.accuracy ?? 30);
       }
+    },
+
+    /** Slår tegnemodus av og på. Utenfor den legger ingen trykk igjen spor. */
+    setDrawing(on) {
+      drawing = Boolean(on);
+      container.classList.toggle('is-drawing', drawing);
+      if (drawing) {
+        map.removeLayer(hovered);
+        container.classList.remove('is-pointing');
+      }
+    },
+
+    isDrawing: () => drawing,
+
+    /**
+     * Markerer stien under pekeren og setter pekefinger-markøren, så det
+     * er synlig at den kan trykkes på.
+     */
+    highlightTrail(points) {
+      if (!points?.length) {
+        map.removeLayer(hovered);
+        container.classList.remove('is-pointing');
+        return;
+      }
+      hovered.setLatLngs(points.map((p) => [p.lat, p.lon]));
+      if (!map.hasLayer(hovered)) hovered.addTo(map);
+      hovered.bringToFront();
+      container.classList.add('is-pointing');
     },
 
     /** Viser et turforslag i kartet, med markør i hver ende. */

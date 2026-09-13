@@ -38,6 +38,25 @@ ved første besøk etter navnebyttet.
 | **Langs ruta** | Hytter, gapahuker, topper, drikkevann, bålplasser, parkering og busstopp innenfor 700 meter. |
 | **Del og ta med** | Delbar lenke (hele turen ligger i URL-en), GPX ut og inn, lagring lokalt og offline-bruk. |
 
+### Kartet er til for å se på
+
+Et trykk i kartet legger ikke igjen noe. Det er lett å komme borti skjermen når
+man drar og zoomer, og da skal det ikke dukke opp en markør man må rydde bort.
+
+| Situasjon | Hva som skjer |
+|---|---|
+| Trykk på en merket sti | Hele turen velges – navn, høydeprofil, vær og bilder |
+| Trykk i terrenget ellers | Ingenting, men appen tipser om «Tegn selv» |
+| Tegnemodus på (knapp i kartet) | Trykk setter punkter, punktene kan dras og fjernes |
+
+Stien under pekeren markeres og får navnet sitt vist, så det er synlig at den
+kan trykkes på. Turene lastes av seg selv første gang kartet står stille på
+zoomnivå 11 eller nærmere – man trenger ikke be om det.
+
+Når man tegner selv, følger ruta stier automatisk. En rett strek over stup og
+vann er nesten aldri det noen mener med et trykk i kartet, så «følg sti» er på
+som standard og kan slås av under Avansert.
+
 ### Enkelt foran, avansert bak
 
 Det som gjelder de fleste turer – marsjfart og når du starter – ligger framme.
@@ -178,6 +197,7 @@ src/js/
   trips.js              turforslag: sy sammen ruter, filtrere og sortere
   journal.js            turdagbok, merker og sammenligninger
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
+  trailhit.js           finner hvilken sti som ligger under fingeren
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
@@ -191,8 +211,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   143 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 39 sjekker mot ekte tjenester
+test/                   149 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 43 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

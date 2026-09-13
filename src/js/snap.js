@@ -248,10 +248,20 @@ export function shortestPath(nodes, startKey, goalKey) {
  */
 export function createSnapper() {
   const cache = new Map();
+  /** Turruter appen allerede har hentet, gjenbrukt i stedet for nye kall. */
+  let seeded = [];
 
   async function loadGraph(box, signal) {
     const key = box.map((value) => value.toFixed(3)).join(',');
     if (!cache.has(key)) {
+      // Ruter vi allerede har i minnet slipper å hentes på nytt.
+      const [south, west, north, east] = box;
+      const local = seeded.filter((route) =>
+        route.points.some(
+          (p) => p.lat >= south && p.lat <= north && p.lon >= west && p.lon <= east,
+        ),
+      );
+
       const promise = (async () => {
         // Begge kildene spørres samtidig. Én som svikter eller somler skal ikke
         // ta med seg den andre – vi bygger grafen av det som rakk fram.
@@ -260,13 +270,18 @@ export function createSnapper() {
           withDeadline((inner) => fetchWalkableWays(box, { signal: inner }), SOURCE_DEADLINE_MS, signal),
         ]);
 
+        const seen = new Set(local.map((route) => route.id));
         const links = [
-          ...marked.items.map((route) => ({ points: route.points, weight: MARKED_ROUTE_WEIGHT })),
+          ...local.map((route) => ({ points: route.points, weight: MARKED_ROUTE_WEIGHT })),
+          ...marked.items
+            .filter((route) => !seen.has(route.id))
+            .map((route) => ({ points: route.points, weight: MARKED_ROUTE_WEIGHT })),
           ...osm.items.map((way) => ({ points: way.geometry, weight: way.weight })),
         ];
         const nodes = buildGraph(links);
         stitchNetworks(nodes);
-        return { nodes, unavailable: marked.failed && osm.failed };
+        // Har vi ruter fra før, er nettet brukbart selv om begge kildene svikter.
+        return { nodes, unavailable: marked.failed && osm.failed && !local.length };
       })();
       cache.set(key, promise);
       // Feilet begge kildene, skal neste forsøk få prøve på nytt.
@@ -314,6 +329,16 @@ export function createSnapper() {
       }
 
       return { points: [from, ...path, to], snapped: true, reason: null };
+    },
+
+    /**
+     * Gir snapperen turruter appen allerede har lastet, så en ny etappe kan
+     * beregnes uten å vente på nettet.
+     * @param {Array<{id: string, points: Array<{lat:number,lon:number}>}>} routes
+     */
+    seed(routes) {
+      seeded = routes ?? [];
+      cache.clear();
     },
 
     clear() {

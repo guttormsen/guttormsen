@@ -63,9 +63,14 @@
 
         <div id="layer-popover" class="popover" role="dialog" aria-label="Kartlag" hidden></div>
 
+        <p id="trail-label" class="trail-label" role="status" aria-live="polite" hidden></p>
+
         <div class="map-overlay">
           <button id="btn-search-here" class="pill pill--action" type="button" hidden>
             <span aria-hidden="true">🔍</span> Finn turer her
+          </button>
+          <button id="btn-draw" class="pill" type="button" aria-pressed="false">
+            <span aria-hidden="true">✏️</span> <span id="btn-draw-label">Tegn selv</span>
           </button>
           <div id="draw-tools" class="draw-tools" hidden>
             <button id="btn-undo" class="pill" type="button" title="Angre siste punkt">
