@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Turplan">
+  <rect width="512" height="512" rx="112" fill="#2f6b46"/>
+  <path d="M96 372 208 196l70 108 38-56 100 124Z" fill="#f7f5f0"/>
+  <path d="M208 196l40 62-52 82-48-2Z" fill="#cfe0d4"/>
+  <circle cx="352" cy="140" r="34" fill="#f2c14e"/>
+  <path d="M96 372h320" stroke="#f7f5f0" stroke-width="18" stroke-linecap="round"/>
+  <path d="M132 424c60-34 110 22 160-8s86 6 116-14" stroke="#e2483d" stroke-width="16" fill="none" stroke-linecap="round" stroke-dasharray="26 22"/>
+</svg>

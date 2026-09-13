@@ -1,0 +1,56 @@
+name: Test og publiser
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Enhetstester
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Kjør enhetstestene
+        # Ingen avhengigheter å installere – testene bruker node --test.
+        run: npm test
+
+      - name: Installer utviklingsverktøy
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+  deploy:
+    name: Publiser til GitHub Pages
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Pakk siden
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Statiske filer – hele katalogen kan legges ut som den er.
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
