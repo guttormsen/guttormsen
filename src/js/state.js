@@ -5,9 +5,12 @@
  * hvert par. En etappe er enten en rett strek eller en sti-snappet punktrekke.
  * Selve linja utledes av etappene, aldri motsatt.
  */
-import { createEmitter, store, uid } from './util.js';
+import { createEmitter, migrateStoragePrefix, store, uid } from './util.js';
 import { APP, DEFAULT_OPTIONS } from './config.js';
 import { DEFAULT_FILTERS } from './trips.js';
+
+// Kjøres før noe leses, så et navnebytte ikke tømmer dagboka til folk.
+migrateStoragePrefix(APP.previousStorageKey, APP.storageKey);
 
 const emitter = createEmitter();
 export const on = emitter.on;
@@ -38,7 +41,7 @@ export const state = {
   /** Høyder for gjeldende prøvelinje, gjenbrukes når bare innstillinger endres. */
   elevationCache: null,
   /** Statusflagg for det som lastes i bakgrunnen. */
-  loading: { elevation: false, weather: false, pois: false, snap: false },
+  loading: { elevation: false, weather: false, pois: false, snap: false, photos: false },
   weather: null,
   sun: null,
   avalanche: null,
@@ -58,6 +61,9 @@ export const state = {
     box: null,
   },
   filters: { ...DEFAULT_FILTERS },
+  /** Bilder og stedsbeskrivelse for turen som er valgt. */
+  photos: [],
+  article: null,
   /** Turforslaget som vises i kartet akkurat nå. */
   preview: null,
 };

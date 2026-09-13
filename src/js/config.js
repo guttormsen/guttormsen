@@ -4,9 +4,11 @@
  */
 
 export const APP = {
-  name: 'Turplan',
-  version: '1.0.0',
-  storageKey: 'turplan.v1',
+  name: 'Lykkelig tur',
+  version: '1.1.0',
+  storageKey: 'lykkeligtur.v1',
+  /** Appen het noe annet før; lagrede turer og innstillinger flyttes over. */
+  previousStorageKey: 'turplan.v1',
   /** Sendes som identifikasjon der tjenesten tillater det. */
   contact: 'https://github.com/guttormsen/guttormsen',
 };

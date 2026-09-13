@@ -1,5 +1,5 @@
 /**
- * Service worker for Turplan.
+ * Service worker for Lykkelig tur.
  *
  * Appen skal virke i fjellet, der det ofte ikke er dekning. Selve appen
  * forhåndslagres, og kartfliser og API-svar du allerede har sett beholdes
@@ -7,9 +7,9 @@
  */
 
 const VERSION = 'v1';
-const SHELL = `turplan-shell-${VERSION}`;
-const TILES = `turplan-tiles-${VERSION}`;
-const DATA = `turplan-data-${VERSION}`;
+const SHELL = `lykkeligtur-shell-${VERSION}`;
+const TILES = `lykkeligtur-tiles-${VERSION}`;
+const DATA = `lykkeligtur-data-${VERSION}`;
 
 /** Maks antall kartfliser vi tar vare på (ca. 40–60 MB). */
 const TILE_LIMIT = 1200;
@@ -32,6 +32,7 @@ const SHELL_FILES = [
   'src/js/snap.js',
   'src/js/trips.js',
   'src/js/journal.js',
+  'src/js/photos.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',
@@ -43,6 +44,7 @@ const SHELL_FILES = [
   'src/js/api/varsom.js',
   'src/js/api/overpass.js',
   'src/js/api/turrutebasen.js',
+  'src/js/api/commons.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'icons/icon.svg',
@@ -50,8 +52,16 @@ const SHELL_FILES = [
   'icons/icon-512.png',
 ];
 
-const TILE_HOSTS = ['cache.kartverket.no', 'wms.geonorge.no'];
-const DATA_HOSTS = ['ws.geonorge.no', 'wfs.geonorge.no', 'api.met.no', 'api01.nve.no'];
+// Bilder og kartfliser hentes én gang og blir liggende – de endrer seg ikke.
+const TILE_HOSTS = ['cache.kartverket.no', 'wms.geonorge.no', 'upload.wikimedia.org', 'thumb.wikimedia.org'];
+const DATA_HOSTS = [
+  'ws.geonorge.no',
+  'wfs.geonorge.no',
+  'api.met.no',
+  'api01.nve.no',
+  'commons.wikimedia.org',
+  'no.wikipedia.org',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

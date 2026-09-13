@@ -44,5 +44,5 @@ createServer(async (request, response) => {
     response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Fant ikke filen');
   }
 }).listen(PORT, () => {
-  console.log(`Turplan kjører på http://localhost:${PORT}`);
+  console.log(`Lykkelig tur kjører på http://localhost:${PORT}`);
 });

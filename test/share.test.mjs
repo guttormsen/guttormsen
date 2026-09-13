@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodePolyline, encodePolyline, tripFromUrl, tripToUrl } from '../src/js/share.js';
 
-const BASE = 'https://example.no/turplan/';
+const BASE = 'https://example.no/lykkeligtur/';
 
 test('polylinje tåler tur–retur gjennom koding', () => {
   const points = [

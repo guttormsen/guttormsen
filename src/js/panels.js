@@ -252,6 +252,24 @@ export function renderDiscover(discovery, filters, handlers) {
   return nodes;
 }
 
+/** Fotograf og lisens, slik Commons krever at de oppgis. */
+function photoCredit(photo, { compact = false } = {}) {
+  const parts = [photo.author, photo.license].filter(Boolean);
+  if (!parts.length) return null;
+  const text = compact ? parts.join(' · ') : `Foto: ${parts.join(' · ')}`;
+  return photo.pageUrl
+    ? el('a', {
+        class: 'photo__credit',
+        href: photo.pageUrl,
+        target: '_blank',
+        rel: 'noopener',
+        title: 'Åpne bildesiden på Wikimedia Commons',
+        text,
+        onclick: (event) => event.stopPropagation(),
+      })
+    : el('span', { class: 'photo__credit', text });
+}
+
 function tripCard(trip, handlers) {
   const facts = [
     formatDistance(trip.length),
@@ -269,6 +287,16 @@ function tripCard(trip, handlers) {
       onmouseleave: () => handlers.onPreviewTrip(null),
       onblur: () => handlers.onPreviewTrip(null),
     }, [
+      trip.photo &&
+        el('span', { class: 'card__photo' }, [
+          el('img', {
+            src: trip.photo.thumb,
+            alt: `Bilde fra området ved ${trip.name}`,
+            loading: 'lazy',
+            decoding: 'async',
+          }),
+          photoCredit(trip.photo, { compact: true }),
+        ]),
       el('span', { class: 'card__top' }, [
         el('span', { class: 'card__name', text: trip.name }),
         el('span', {
@@ -305,7 +333,7 @@ function localInputValue(date) {
 }
 
 export function renderTrip(context, handlers) {
-  const { trip, summary, startTime, weather, sun, avalanche, pois, loading, checklist } = context;
+  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist } = context;
 
   if (!summary) {
     return [
@@ -319,6 +347,8 @@ export function renderTrip(context, handlers) {
   }
 
   return [
+    gallerySection(photos, loading.photos),
+    articleSection(article),
     quickSettings(trip, startTime, handlers),
     weatherSection(weather, sun, loading.weather, startTime),
     safetySection(summary, sun, avalanche, startTime, checklist, handlers),
@@ -326,6 +356,64 @@ export function renderTrip(context, handlers) {
     waypointSection(trip, summary, handlers),
     advancedSection(trip, handlers),
   ];
+}
+
+/**
+ * Bilder tatt i nærheten av ruta. De er geotaggede av fotografene selv, så
+ * utvalget er sortert etter hvor godt de passer – ikke garantert å vise stien.
+ */
+function gallerySection(photos, loading) {
+  if (loading && !photos?.length) {
+    return el('div', { class: 'gallery gallery--loading' }, [el('div', { class: 'skeleton skeleton--photo' })]);
+  }
+  if (!photos?.length) return null;
+
+  const [lead, ...rest] = photos;
+  return el('section', { class: 'gallery' }, [
+    el('figure', { class: 'photo photo--lead' }, [
+      el('img', {
+        src: lead.thumb,
+        alt: lead.description ? lead.description.slice(0, 140) : `Bilde fra området rundt turen: ${lead.title}`,
+        loading: 'lazy',
+        decoding: 'async',
+      }),
+      el('figcaption', {}, [photoCredit(lead)]),
+    ]),
+    rest.length > 0 &&
+      el('div', { class: 'gallery__strip' },
+        rest.slice(0, 5).map((photo) =>
+          el('a', {
+            class: 'gallery__thumb',
+            href: photo.pageUrl ?? photo.thumb,
+            target: '_blank',
+            rel: 'noopener',
+            title: [photo.title, photo.author, photo.license].filter(Boolean).join(' · '),
+          }, [
+            el('img', { src: photo.thumb, alt: photo.title, loading: 'lazy', decoding: 'async' }),
+          ]),
+        ),
+      ),
+    el('p', { class: 'gallery__note' }, [
+      'Bilder fra ',
+      el('a', { href: 'https://commons.wikimedia.org/', target: '_blank', rel: 'noopener', text: 'Wikimedia Commons' }),
+      ', tatt i nærheten av ruta.',
+    ]),
+  ]);
+}
+
+/** Kort utdrag fra Wikipedia, bare når artikkelen handler om denne turen. */
+function articleSection(article) {
+  if (!article) return null;
+  return section('Om stedet', [
+    el('p', { class: 'article__text', text: article.extract }),
+    el('a', {
+      class: 'linkish linkish--small',
+      href: article.url,
+      target: '_blank',
+      rel: 'noopener',
+      text: `Les mer om ${article.title} på Wikipedia`,
+    }),
+  ]);
 }
 
 function quickSettings(trip, startTime, handlers) {

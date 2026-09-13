@@ -1,4 +1,4 @@
-# Turplan
+# Lykkelig tur
 
 En turapp for Norge som kjører i nettleseren. Den finner ekte, merkede turer
 der du er, og planlegger dem på Kartverkets kart – med høydeprofil fra
@@ -16,9 +16,14 @@ Ingen konto, ingen sporing, ingen server: turen din bor i nettleseren din.
 
 Appen har tre faner: **Finn tur**, **Turen** og **Dagbok**.
 
+Den het Turplan fram til nå. Lagrede turer og dagbok flyttes automatisk over
+ved første besøk etter navnebyttet.
+
 | | |
 |---|---|
 | **Finn tur** | Henter navngitte, merkede turer fra den nasjonale rutebasen der du er, og setter løse rutesegmenter sammen til hele turer. Filtrer på lengde, vanskegrad, rundtur, merking og rutetype – eller trykk «Overrask meg». Ett trykk på et kort laster hele turen inn ferdig planlagt. |
+| **Bilder fra turen** | Geotaggede foto fra Wikimedia Commons, koblet til riktig tur og rangert etter hvor godt de passer. Kart, kommunevåpen og kjøpesentre siles bort. Fotograf og lisens står på hvert bilde. |
+| **Om stedet** | Et kort utdrag fra norsk Wikipedia når artikkelen faktisk handler om turen – ikke bare tilfeldigvis ligger i nærheten. |
 | **Turdagbok** | Marker en tur som gått, så samler den seg opp med kilometer og høydemeter. Fjorten merker å samle, og sammenligninger som gjør tallene til noe man kjenner igjen: «du har klatret 1,4 × Galdhøpiggen». |
 | **Ekte kart** | Kartverkets topografiske kart, gråtonekart, turkart og sjøkart – det samme grunnlaget som norgeskart.no. |
 | **Merkede ruter** | Turrutebasen legges oppå kartet: fotruter, skiløyper, sykkelruter og andre ruter. |
@@ -67,6 +72,8 @@ Alt er åpne data. Ingen API-nøkler kreves.
 | [MET Norway Locationforecast](https://api.met.no/) | Værvarsel og soloppgang/solnedgang | CC BY 4.0 |
 | [NVE / Varsom](https://api01.nve.no/) | Snøskredvarsel | NLOD |
 | [OpenStreetMap via Overpass](https://overpass-api.de/) | Hytter, topper og stier der Turrutebasen mangler | ODbL |
+| [Wikimedia Commons](https://commons.wikimedia.org/) | Bilder fra turområdene | Per bilde – vises ved hvert foto |
+| [Wikipedia (bokmål)](https://no.wikipedia.org/) | Korte stedsbeskrivelser | CC BY-SA 4.0 |
 
 ### Hvorfor ikke ut.no?
 
@@ -85,6 +92,18 @@ Det appen gjør i stedet:
   til bookingen med ett klikk.
 
 Skulle DNT åpne et API igjen, er `src/js/api/` stedet å legge det inn.
+
+### Om bildene
+
+Bildene er geotagget av fotografene selv, og et rent geografisk søk gir mye
+rart: kart, kommunevåpen, en fotballstadion i nabodalen. Utvalget siles derfor
+på filnavn, og rangeres på hvor godt navnet matcher turen, hvor nær ruta bildet
+er tatt, og om motivet ser ut til å være natur. Uten navnetreff må bildet ligge
+tett på ruta for å bli med.
+
+Det er fortsatt et bilde *fra området*, ikke nødvendigvis av stien – og det er
+sånn det står i appen. Omtrent halvparten av turene får et bilde; resten vises
+like fint uten.
 
 ### Om dekningen
 
@@ -134,6 +153,7 @@ src/js/
   map.js                Leaflet: lag, markører, tegning av ruta
   trips.js              turforslag: sy sammen ruter, filtrere og sortere
   journal.js            turdagbok, merker og sammenligninger
+  photos.js             kobler geotaggede bilder til riktig tur
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
   snap.js               stigraf og korteste veg («Følg sti»)
@@ -146,8 +166,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   104 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 34 sjekker mot ekte tjenester
+test/                   120 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 37 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen
@@ -182,7 +202,7 @@ identifiserende `User-Agent` – se [vilkårene til MET](https://api.met.no/doc/
 
 ## Personvern
 
-Turplan har ingen server og ingen konto. Turene dine lagres i `localStorage` i
+Lykkelig tur har ingen server og ingen konto. Turene dine lagres i `localStorage` i
 din egen nettleser, og delbare lenker legger turen i URL-ens fragment (`#`),
 som aldri sendes til noen tjener. Kartfliser og værvarsler hentes direkte fra
 Kartverket, MET og NVE, som naturligvis ser IP-adressen din slik enhver

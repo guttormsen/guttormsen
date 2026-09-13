@@ -1,5 +1,5 @@
 /*
- * Turplan – stilark.
+ * Lykkelig tur – stilark.
  * Mobil først. Alle farger er variabler slik at lys og mørk modus deler ett sett regler.
  */
 
@@ -941,6 +941,129 @@ button {
 .card__by {
   font-size: 11.5px;
   color: var(--ink-3);
+}
+
+/* ---------- Bilder ---------- */
+
+.card__photo {
+  position: relative;
+  display: block;
+  margin: -13px -14px 4px;
+  overflow: hidden;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.card__photo img {
+  display: block;
+  width: 100%;
+  height: 132px;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
+.card__photo .photo__credit {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: #fff;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgb(0 0 0 / 55%);
+  border-radius: 999px;
+}
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.photo {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+
+.photo img {
+  display: block;
+  width: 100%;
+  height: 190px;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
+.photo figcaption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 18px 10px 7px;
+  background: linear-gradient(to top, rgb(0 0 0 / 62%), transparent);
+}
+
+.photo__credit {
+  font-size: 11px;
+  color: #fff;
+  text-decoration: none;
+}
+
+.photo__credit:hover {
+  text-decoration: underline;
+}
+
+.gallery__strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gallery__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery__thumb {
+  flex: none;
+  width: 82px;
+  height: 62px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.gallery__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--surface-3);
+  transition: transform 0.15s;
+}
+
+.gallery__thumb:hover img {
+  transform: scale(1.06);
+}
+
+.gallery__note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.skeleton--photo {
+  height: 190px;
+}
+
+.article__text {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .spark {

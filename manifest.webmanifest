@@ -1,7 +1,7 @@
 {
-  "name": "Turplan – planlegg turen",
-  "short_name": "Turplan",
-  "description": "Planlegg fotturen på Kartverkets kart med merkede stier, ekte høydeprofil, realistisk tidsbruk og vær langs ruta.",
+  "name": "Lykkelig tur – finn turen din",
+  "short_name": "Lykkelig tur",
+  "description": "Finn merkede turer der du er, og planlegg dem på Kartverkets kart med høydeprofil, vær langs ruta og turdagbok.",
   "lang": "nb",
   "dir": "ltr",
   "start_url": ".",

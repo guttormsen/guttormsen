@@ -1,7 +1,7 @@
 {
-  "name": "turplan",
+  "name": "lykkelig-tur",
   "version": "1.0.0",
-  "description": "Turplanlegger for Norge på Kartverkets kart – statisk nettside uten byggesteg.",
+  "description": "Turapp for Norge på Kartverkets kart – statisk nettside uten byggesteg.",
   "private": true,
   "type": "module",
   "license": "MIT",

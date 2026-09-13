@@ -142,6 +142,30 @@ export const store = {
   },
 };
 
+/**
+ * Flytter lagrede data når appen har byttet navn, slik at ingen mister
+ * turdagboka si. Kjøres én gang; nøkler som allerede finnes røres ikke.
+ *
+ * @param {string} from gammelt nøkkelprefiks
+ * @param {string} to nytt nøkkelprefiks
+ */
+export function migrateStoragePrefix(from, to) {
+  if (!from || from === to) return 0;
+  let moved = 0;
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(`${from}.`)) continue;
+      const target = `${to}.${key.slice(from.length + 1)}`;
+      if (localStorage.getItem(target) != null) continue;
+      localStorage.setItem(target, localStorage.getItem(key));
+      moved++;
+    }
+  } catch {
+    // Privat modus eller full disk – da har vi uansett ingenting å flytte.
+  }
+  return moved;
+}
+
 /* ---------- Diverse ---------- */
 
 export function uid() {

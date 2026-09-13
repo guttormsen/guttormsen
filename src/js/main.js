@@ -9,6 +9,8 @@ import { fetchElevations } from './api/hoydedata.js';
 import { fetchAvalancheWarning } from './api/varsom.js';
 import { fetchPois } from './api/overpass.js';
 import { fetchFotruterForDiscovery } from './api/turrutebasen.js';
+import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear } from './api/commons.js';
+import { articleMatches, attachPhotos, buildPhotoIndex, photosForTrip } from './photos.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -38,6 +40,12 @@ let myPosition = null;
 let generation = 0;
 let inflight = null;
 let activeTab = 'finn';
+
+/**
+ * Kortene sier «bilde fra området», og da kan bildet ligge litt lenger unna
+ * ruta enn i galleriet inne på turen.
+ */
+const CARD_PHOTO_RADIUS_M = 800;
 
 const view = createMap($('#map'), {
   onMapClicked: (point) => S.addWaypoint(point),
@@ -273,6 +281,8 @@ function loadContext() {
     })
     .catch(() => {});
 
+  loadPhotosAndArticle(summary, id);
+
   fetchPois(summary.line)
     .then((pois) => {
       if (!fresh()) return;
@@ -285,6 +295,37 @@ function loadContext() {
       S.state.loading.pois = false;
       renderPane('turen');
     });
+}
+
+/**
+ * Bilder fra ruta og et kort utdrag om stedet.
+ * Artikkelen vises bare når den faktisk handler om turen – uten navnetreff
+ * ender man fort opp med en fotballstadion i nabodalen.
+ */
+async function loadPhotosAndArticle(summary, id) {
+  const middle = summary.line[Math.floor(summary.line.length / 2)];
+  const name = S.state.trip.name;
+  S.state.loading.photos = true;
+  S.state.photos = [];
+  S.state.article = null;
+  renderPane('turen');
+
+  try {
+    const radius = Math.max(2000, Math.min(10000, summary.distance));
+    const [photos, articles] = await Promise.all([
+      fetchPhotosNear(middle, { radius, width: 800 }).catch(() => []),
+      name ? fetchNearbyArticles(middle, { radius: Math.min(5000, radius) }).catch(() => []) : [],
+    ]);
+    if (id !== generation) return;
+
+    S.state.photos = photosForTrip(buildPhotoIndex(photos), { name, points: summary.line }, { limit: 8 });
+    S.state.article = articles.find((article) => articleMatches(article.title, name)) ?? null;
+  } finally {
+    if (id === generation) {
+      S.state.loading.photos = false;
+      renderPane('turen');
+    }
+  }
 }
 
 /** Bare været – når bare tidspunkt eller marsjfart er endret. */
@@ -328,6 +369,7 @@ async function loadDiscovery() {
     discovery.searched = true;
     applyFilters();
     loadCardElevations(run);
+    loadCardPhotos(run, box);
   } catch (error) {
     if (run !== discoveryRun) return;
     console.warn('Turrutebasen feilet', error);
@@ -378,6 +420,21 @@ async function loadCardElevations(run) {
   const merge = (trip) => enriched.get(trip.id) ?? trip;
   S.state.discovery.all = S.state.discovery.all.map(merge);
   applyFilters();
+}
+
+/**
+ * Henter geotaggede bilder for hele utsnittet i ett kall og fordeler dem på
+ * turene. Bilder er en bonus – feiler det, merker brukeren ingenting.
+ */
+async function loadCardPhotos(run, box) {
+  try {
+    const photos = await fetchAreaPhotos(box, { width: 400 });
+    if (run !== discoveryRun || !photos.length) return;
+    S.state.discovery.all = attachPhotos(S.state.discovery.all, photos, { radius: CARD_PHOTO_RADIUS_M });
+    applyFilters();
+  } catch (error) {
+    console.warn('Bilder fra Commons feilet', error);
+  }
 }
 
 /** Viser eller skjuler «Finn turer her» etter hvor kartet står. */
@@ -536,6 +593,8 @@ const PANES = {
         sun: S.state.sun,
         avalanche: S.state.avalanche,
         pois: S.state.pois,
+        photos: S.state.photos,
+        article: S.state.article,
         loading: S.state.loading,
         checklist,
       },
@@ -693,7 +752,7 @@ async function share() {
 
   if (navigator.share) {
     try {
-      await navigator.share({ title: `${name} – Turplan`, text, url });
+      await navigator.share({ title: `${name} – Lykkelig tur`, text, url });
       return;
     } catch {
       // Brukeren avbrøt delingen; fall tilbake til kopiering.
@@ -822,4 +881,4 @@ const clean = (object) =>
 boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
-window.turplan = { state: S.state, view, loadDiscovery, selectTab };
+window.lykkeligtur = { state: S.state, view, loadDiscovery, selectTab };

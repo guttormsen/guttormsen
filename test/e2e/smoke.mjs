@@ -114,7 +114,7 @@ page.on('console', (message) => {
 
 const goToTestView = (target) =>
   target.evaluate(
-    ({ lat, lon, zoom }) => window.turplan.view.map.setView([lat, lon], zoom),
+    ({ lat, lon, zoom }) => window.lykkeligtur.view.map.setView([lat, lon], zoom),
     TEST_VIEW,
   );
 
@@ -123,7 +123,7 @@ await mkdir(SHOTS, { recursive: true });
 try {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   try {
-    await page.waitForFunction(() => Boolean(window.turplan), null, { timeout: 15000 });
+    await page.waitForFunction(() => Boolean(window.lykkeligtur), null, { timeout: 15000 });
     check('appen starter', true);
   } catch (error) {
     check('appen starter', false, errors.slice(0, 4).join(' | ') || String(error).split('\n')[0]);
@@ -172,7 +172,7 @@ try {
   await page.click('.chip--toggle:has-text("Kort tur")');
   await page.waitForTimeout(300);
   const shortOnly = await page.evaluate(() =>
-    window.turplan.state.discovery.visible.every((trip) => trip.length < 3000),
+    window.lykkeligtur.state.discovery.visible.every((trip) => trip.length < 3000),
   );
   const shortCount = await page.locator('.card').count();
   check('lengdefilter virker', shortOnly && shortCount > 0, `${shortCount} korte turer`);
@@ -180,7 +180,7 @@ try {
   await page.click('.chip--toggle:has-text("Rundtur")');
   await page.waitForTimeout(300);
   const loopsOnly = await page.evaluate(() =>
-    window.turplan.state.discovery.visible.every((trip) => trip.loop && trip.length < 3000),
+    window.lykkeligtur.state.discovery.visible.every((trip) => trip.loop && trip.length < 3000),
   );
   check('flere filtre kombineres', loopsOnly);
 
@@ -188,16 +188,27 @@ try {
   await page.waitForTimeout(300);
   check('filtrene kan nullstilles', (await page.locator('.card').count()) === cardCount);
 
+  /* Bilder fra Wikimedia Commons */
+  await page
+    .waitForFunction(() => document.querySelector('.card__photo img')?.complete === true, null, { timeout: 60000 })
+    .catch(() => {});
+  const cardPhotos = await page.locator('.card__photo img').count();
+  check('turkortene får bilder', cardPhotos > 0, `${cardPhotos} kort med bilde`);
+  if (cardPhotos) {
+    const credit = await page.locator('.card__photo .photo__credit').first().textContent();
+    check('bildene oppgir fotograf og lisens', Boolean(credit?.trim()), credit?.trim().slice(0, 50));
+  }
+
   await page.screenshot({ path: join(SHOTS, 'finn-tur.png') });
 
   /* Velg en tur */
   const picked = await page.locator('.card__name').first().textContent();
   await page.locator('.card').first().click();
-  await page.waitForFunction(() => window.turplan.state.summary?.hasElevation === true, null, { timeout: 60000 });
+  await page.waitForFunction(() => window.lykkeligtur.state.summary?.hasElevation === true, null, { timeout: 60000 });
   check('tur kan velges fra kortet', (await page.locator('.tab[data-tab="turen"].is-active').count()) === 1, picked ?? '');
 
   const summary = await page.evaluate(() => {
-    const s = window.turplan.state.summary;
+    const s = window.lykkeligtur.state.summary;
     return { distance: s.distance, ascent: s.ascent, seconds: s.time.totalSeconds, samples: s.line.length };
   });
   check('høyder hentes fra Kartverket', summary.samples > 5, `${summary.samples} punkter`);
@@ -205,6 +216,17 @@ try {
   check('nøkkeltall vises', (await page.locator('.stat__value').count()) === 4);
   check('høydeprofilen tegnes', (await page.locator('.profile__seg').count()) > 3);
   check('tegneknappene dukker opp', await page.locator('#draw-tools').isVisible());
+
+  /* Bildegalleri i turvisningen */
+  const gallery = await page
+    .waitForSelector('.photo--lead img', { timeout: 60000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    'turen får et bildegalleri',
+    gallery,
+    gallery ? `${await page.locator('.gallery__thumb').count()} småbilder` : 'ingen bilder i området',
+  );
 
   /* Vær */
   await page.waitForSelector('.weather__row', { timeout: 60000 });
@@ -218,6 +240,9 @@ try {
   check('avanserte valg kan åpnes', await page.locator('#opt-snap').isVisible());
   await advanced.locator('summary').click();
 
+  // Rull til toppen, så skjermbildet viser turen slik man møter den.
+  await page.locator('.panes').evaluate((node) => { node.scrollTop = 0; });
+  await page.waitForTimeout(200);
   await page.screenshot({ path: join(SHOTS, 'turen.png') });
 
   /* Dagbok */
@@ -243,12 +268,12 @@ try {
   /* Deling og GPX */
   const shareUrl = await page.evaluate(async () => {
     const { tripToUrl } = await import('./src/js/share.js');
-    return tripToUrl(window.turplan.state.trip);
+    return tripToUrl(window.lykkeligtur.state.trip);
   });
   check('delbar lenke inneholder ruta', shareUrl.includes('#r='));
   const gpx = await page.evaluate(async () => {
     const { buildGpx } = await import('./src/js/gpx.js');
-    const s = window.turplan.state.summary;
+    const s = window.lykkeligtur.state.summary;
     return buildGpx({ name: 'Røyktest', line: s.line, elevations: s.elevations });
   });
   check('GPX bygges med høyder', gpx.includes('<trkpt') && gpx.includes('<ele>'));
@@ -272,15 +297,15 @@ try {
   await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.6);
   let drawn = { waypoints: 0, distance: null };
   try {
-    await page.waitForFunction(() => window.turplan.state.summary?.distance > 100, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.lykkeligtur.state.summary?.distance > 100, null, { timeout: 30000 });
     drawn = await page.evaluate(() => ({
-      waypoints: window.turplan.state.trip.waypoints.length,
-      distance: Math.round(window.turplan.state.summary?.distance ?? 0),
+      waypoints: window.lykkeligtur.state.trip.waypoints.length,
+      distance: Math.round(window.lykkeligtur.state.summary?.distance ?? 0),
     }));
   } catch {
     drawn = await page.evaluate(() => ({
-      waypoints: window.turplan.state.trip.waypoints.length,
-      distance: Math.round(window.turplan.state.summary?.distance ?? 0),
+      waypoints: window.lykkeligtur.state.trip.waypoints.length,
+      distance: Math.round(window.lykkeligtur.state.summary?.distance ?? 0),
     }));
   }
   check(
@@ -299,7 +324,7 @@ try {
   await relayExternalRequests(phone);
   const mobile = await phone.newPage();
   await mobile.goto(base, { waitUntil: 'domcontentloaded' });
-  await mobile.waitForFunction(() => Boolean(window.turplan), null, { timeout: 20000 });
+  await mobile.waitForFunction(() => Boolean(window.lykkeligtur), null, { timeout: 20000 });
   await goToTestView(mobile);
   await mobile.waitForTimeout(1500);
 
@@ -334,7 +359,7 @@ try {
   await relayExternalRequests(dark);
   const darkPage = await dark.newPage();
   await darkPage.goto(`${base}#${new URL(shareUrl).hash.slice(1)}`, { waitUntil: 'domcontentloaded' });
-  await darkPage.waitForFunction(() => window.turplan?.state.summary != null, null, { timeout: 40000 });
+  await darkPage.waitForFunction(() => window.lykkeligtur?.state.summary != null, null, { timeout: 40000 });
   await darkPage.waitForTimeout(2500);
   const bg = await darkPage.evaluate(() => getComputedStyle(document.body).backgroundColor);
   check('mørk modus bruker mørk bakgrunn', bg === 'rgb(20, 22, 26)', bg);
