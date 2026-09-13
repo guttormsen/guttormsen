@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Turplan – planlegg turen på ekte kart</title>
+    <title>Turplan – finn turen din</title>
     <meta
       name="description"
-      content="Planlegg fotturen på Kartverkets kart med merkede stier fra Turrutebasen. Ekte høydeprofil, realistisk tidsbruk, vær langs ruta og dagslyssjekk."
+      content="Finn og planlegg turer i Norge på Kartverkets kart. Ekte turforslag fra den nasjonale rutebasen, høydeprofil, vær langs ruta og turdagbok."
     />
     <meta name="theme-color" content="#f7f5f0" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)" />
@@ -14,7 +14,6 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="src/css/app.css" />
   </head>
@@ -33,81 +32,84 @@
           id="search-input"
           class="search__input"
           type="search"
-          placeholder="Søk: Gaustatoppen, Gjendesheim, Preikestolen …"
+          placeholder="Hvor vil du gå?"
           autocomplete="off"
           spellcheck="false"
         />
         <ul id="search-results" class="search__list" hidden></ul>
         <p id="search-status" class="visually-hidden" role="status" aria-live="polite"></p>
       </div>
-
-      <div class="topbar__actions">
-        <button id="btn-locate" class="icon-btn" type="button" title="Vis min posisjon">
-          <span aria-hidden="true">◎</span><span class="visually-hidden">Vis min posisjon</span>
-        </button>
-        <button id="btn-undo" class="icon-btn" type="button" title="Angre siste punkt" disabled>
-          <span aria-hidden="true">↩</span><span class="visually-hidden">Angre siste punkt</span>
-        </button>
-        <button id="btn-clear" class="icon-btn" type="button" title="Tøm ruta" disabled>
-          <span aria-hidden="true">✕</span><span class="visually-hidden">Tøm ruta</span>
-        </button>
-      </div>
     </header>
 
     <main class="app">
-      <div id="map" class="map" role="application" aria-label="Kart. Klikk for å sette veipunkt."></div>
+      <div class="map-wrap">
+        <div id="map" class="map" role="application" aria-label="Kart. Klikk for å sette veipunkt."></div>
+
+        <div class="map-tools">
+          <button id="btn-locate" class="map-btn" type="button" title="Vis hvor jeg er">
+            <span aria-hidden="true">◎</span><span class="visually-hidden">Vis hvor jeg er</span>
+          </button>
+          <button
+            id="btn-layers"
+            class="map-btn"
+            type="button"
+            title="Kartlag"
+            aria-expanded="false"
+            aria-controls="layer-popover"
+          >
+            <span aria-hidden="true">▤</span><span class="visually-hidden">Kartlag</span>
+          </button>
+        </div>
+
+        <div id="layer-popover" class="popover" role="dialog" aria-label="Kartlag" hidden></div>
+
+        <div class="map-overlay">
+          <button id="btn-search-here" class="pill pill--action" type="button" hidden>
+            <span aria-hidden="true">🔍</span> Finn turer her
+          </button>
+          <div id="draw-tools" class="draw-tools" hidden>
+            <button id="btn-undo" class="pill" type="button" title="Angre siste punkt">
+              <span aria-hidden="true">↩</span> Angre
+            </button>
+            <button id="btn-clear" class="pill" type="button" title="Fjern hele ruta">
+              <span aria-hidden="true">✕</span> Tøm
+            </button>
+          </div>
+        </div>
+      </div>
 
       <aside id="panel" class="panel" aria-label="Turpanel">
         <button id="sheet-handle" class="sheet-handle" type="button" aria-expanded="false" aria-controls="panel">
           <span class="sheet-handle__grip" aria-hidden="true"></span>
-          <span class="visually-hidden">Vis eller skjul turpanelet</span>
+          <span class="visually-hidden">Dra for å vise eller skjule panelet</span>
         </button>
 
-        <section class="stats" id="stats" aria-live="polite"></section>
-
-        <section class="profile" aria-label="Høydeprofil">
-          <div id="profile" class="profile__box"></div>
-          <p id="profile-empty" class="profile__empty">
-            Klikk i kartet for å sette startpunktet. Neste klikk lager en strekning.
-          </p>
-        </section>
-
         <nav class="tabs" aria-label="Seksjoner">
-          <button class="tab is-active" type="button" data-tab="plan" aria-selected="true">Plan</button>
-          <button class="tab" type="button" data-tab="vaer" aria-selected="false">Vær</button>
-          <button class="tab" type="button" data-tab="sikkerhet" aria-selected="false">Sikkerhet</button>
-          <button class="tab" type="button" data-tab="rute" aria-selected="false">Langs ruta</button>
-          <button class="tab" type="button" data-tab="kart" aria-selected="false">Kart</button>
-          <button class="tab" type="button" data-tab="turer" aria-selected="false">Turer</button>
+          <button class="tab is-active" type="button" data-tab="finn" aria-selected="true">
+            <span aria-hidden="true">🧭</span> Finn tur
+          </button>
+          <button class="tab" type="button" data-tab="turen" aria-selected="false">
+            <span aria-hidden="true">🥾</span> Turen
+          </button>
+          <button class="tab" type="button" data-tab="dagbok" aria-selected="false">
+            <span aria-hidden="true">📖</span> Dagbok
+          </button>
         </nav>
 
-        <div class="panes">
-          <div class="pane" id="pane-plan" data-pane="plan"></div>
-          <div class="pane" id="pane-vaer" data-pane="vaer" hidden></div>
-          <div class="pane" id="pane-sikkerhet" data-pane="sikkerhet" hidden></div>
-          <div class="pane" id="pane-rute" data-pane="rute" hidden></div>
-          <div class="pane" id="pane-kart" data-pane="kart" hidden></div>
-          <div class="pane" id="pane-turer" data-pane="turer" hidden></div>
+        <div id="route-header" class="route-header" hidden>
+          <section class="stats" id="stats" aria-live="polite"></section>
+          <section class="profile" aria-label="Høydeprofil">
+            <div id="profile" class="profile__box"></div>
+          </section>
         </div>
 
-        <footer class="panel__footer">
-          <div class="panel__buttons">
-            <button id="btn-save" class="btn" type="button">Lagre</button>
-            <button id="btn-share" class="btn" type="button">Del lenke</button>
-            <button id="btn-gpx" class="btn" type="button">Last ned GPX</button>
-            <label class="btn btn--file">
-              Åpne GPX
-              <input id="input-gpx" type="file" accept=".gpx,application/gpx+xml" class="visually-hidden" />
-            </label>
-          </div>
-          <p class="credits">
-            Kart og høyder: <a href="https://www.kartverket.no/" target="_blank" rel="noopener">Kartverket</a> ·
-            Stier: Turrutebasen og
-            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ·
-            Vær: <a href="https://www.met.no/" target="_blank" rel="noopener">MET</a> ·
-            Skred: <a href="https://varsom.no/" target="_blank" rel="noopener">Varsom / NVE</a>
-          </p>
-        </footer>
+        <div class="panes">
+          <div class="pane" id="pane-finn" data-pane="finn"></div>
+          <div class="pane" id="pane-turen" data-pane="turen" hidden></div>
+          <div class="pane" id="pane-dagbok" data-pane="dagbok" hidden></div>
+        </div>
+
+        <footer id="panel-footer" class="panel__footer" hidden></footer>
       </aside>
     </main>
 

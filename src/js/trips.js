@@ -8,7 +8,8 @@
  *
  * Rene funksjoner – ingen DOM, ingen nettverk.
  */
-import { haversine, pathLength } from './geo.js';
+import { haversine, pathLength, smooth } from './geo.js';
+import { elevationStats, estimateTime, fillGaps } from './route.js';
 
 /** Endepunkter nærmere hverandre enn dette regnes som samme punkt. */
 const JOIN_TOLERANCE_M = 30;
@@ -277,4 +278,34 @@ export function sampleForCard(points, count = 24) {
   if (points.length <= count) return points.slice();
   const step = (points.length - 1) / (count - 1);
   return Array.from({ length: count }, (_, i) => points[Math.round(i * step)]);
+}
+
+/**
+ * Fyller inn stigning, fall og tidsbruk på et turforslag når høydene er hentet.
+ *
+ * Kortene bruker en grov punktprøve for å spare Kartverket for oppslag, så
+ * tiden regnes på prøven og skaleres opp til turens virkelige lengde.
+ *
+ * @param {object} trip
+ * @param {Array<{lat:number,lon:number}>} sample punktene høydene gjelder for
+ * @param {Array<number|null>} elevations
+ * @param {object} options marsjfart, underlag og sekkevekt
+ */
+export function enrichTrip(trip, sample, elevations, options) {
+  const filled = smooth(fillGaps(elevations), 1);
+  if (!filled.some(Number.isFinite)) return trip;
+
+  const { ascent, descent, max } = elevationStats(filled);
+  const sampleLength = pathLength(sample);
+  const scale = sampleLength > 0 ? trip.length / sampleLength : 1;
+  const time = estimateTime(sample, filled, options);
+
+  return {
+    ...trip,
+    ascent,
+    descent,
+    maxElevation: max,
+    seconds: time.totalSeconds * scale,
+    profile: filled,
+  };
 }

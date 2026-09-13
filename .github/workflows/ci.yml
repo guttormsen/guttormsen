@@ -48,6 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # Slår på Pages for repoet første gang, så ingen må gjøre det manuelt.
+          enablement: true
       - name: Pakk siden
         uses: actions/upload-pages-artifact@v3
         with:

@@ -7,6 +7,7 @@
  */
 import { createEmitter, store, uid } from './util.js';
 import { APP, DEFAULT_OPTIONS } from './config.js';
+import { DEFAULT_FILTERS } from './trips.js';
 
 const emitter = createEmitter();
 export const on = emitter.on;
@@ -42,8 +43,39 @@ export const state = {
   sun: null,
   avalanche: null,
   pois: [],
-  selectedPoi: null,
+
+  /** Turforslag i området brukeren ser på. */
+  discovery: {
+    loading: false,
+    searched: false,
+    error: false,
+    /** Alle turer i utsnittet, før filtrering. */
+    all: [],
+    /** Etter filtrering og sortering – det kortene viser. */
+    visible: [],
+    total: 0,
+    truncated: false,
+    box: null,
+  },
+  filters: { ...DEFAULT_FILTERS },
+  /** Turforslaget som vises i kartet akkurat nå. */
+  preview: null,
 };
+
+/** Bygger en tur av et turforslag, med hele den kartlagte geometrien beholdt. */
+export function tripFromSuggestion(suggestion) {
+  const points = suggestion.points;
+  const start = { lat: points[0].lat, lon: points[0].lon, name: suggestion.name, id: uid() };
+  const end = { lat: points.at(-1).lat, lon: points.at(-1).lon, name: null, id: uid() };
+  return {
+    id: uid(),
+    name: suggestion.name,
+    waypoints: [start, end],
+    legs: [{ points: points.map((p) => ({ lat: p.lat, lon: p.lon })), snapped: true, pending: false }],
+    startTime: nextHour().toISOString(),
+    options: { ...state.trip.options },
+  };
+}
 
 /** Sammenhengende linje gjennom alle etappene, uten dupliserte knekkpunkter. */
 export function routeLine(trip = state.trip) {

@@ -10,6 +10,9 @@ import { POI_KINDS } from './api/overpass.js';
 const OSM_ATTRIBUTION =
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
 
+/** Største område vi ber Turrutebasen om på én gang, i grader. */
+const SEARCH_SPAN = { lat: 0.11, lon: 0.24 };
+
 export function createMap(container, handlers = {}) {
   const map = L.map(container, {
     center: [DEFAULT_VIEW.lat, DEFAULT_VIEW.lon],
@@ -92,6 +95,23 @@ export function createMap(container, handlers = {}) {
   shadow.addTo(map);
   line.addTo(map);
   pending.addTo(map);
+
+  // Forhåndsvisning av et turforslag, tegnet under den planlagte ruta.
+  const suggestion = L.polyline([], {
+    pane: 'route',
+    color: '#1c6fd4',
+    weight: 6,
+    opacity: 0.9,
+    lineCap: 'round',
+  });
+  const suggestionHalo = L.polyline([], {
+    pane: 'route',
+    color: '#ffffff',
+    weight: 11,
+    opacity: 0.8,
+    lineCap: 'round',
+  });
+  const suggestionEnds = L.layerGroup();
 
   const hoverMarker = L.circleMarker([0, 0], {
     pane: 'route',
@@ -177,6 +197,9 @@ export function createMap(container, handlers = {}) {
 
   /* ---------- Hendelser ---------- */
 
+  map.on('moveend', () => handlers.onMoveEnd?.());
+  map.on('zoomend', () => handlers.onMoveEnd?.());
+
   map.on('click', (event) => {
     const point = { lat: event.latlng.lat, lon: event.latlng.lng };
     // Klikk nær ruta setter inn et punkt i stedet for å forlenge den.
@@ -259,6 +282,60 @@ export function createMap(container, handlers = {}) {
         accuracyCircle.setLatLng(latlng).setRadius(position.accuracy ?? 30);
       }
     },
+
+    /** Viser et turforslag i kartet, med markør i hver ende. */
+    showSuggestion(points) {
+      suggestionEnds.clearLayers();
+      if (!points?.length) {
+        for (const layer of [suggestionHalo, suggestion, suggestionEnds]) map.removeLayer(layer);
+        return;
+      }
+      const latlngs = points.map((p) => [p.lat, p.lon]);
+      suggestionHalo.setLatLngs(latlngs);
+      suggestion.setLatLngs(latlngs);
+      if (!map.hasLayer(suggestion)) {
+        suggestionHalo.addTo(map);
+        suggestion.addTo(map);
+        suggestionEnds.addTo(map);
+      }
+      suggestionHalo.bringToFront();
+      suggestion.bringToFront();
+      for (const [point, kind] of [
+        [points[0], 'start'],
+        [points.at(-1), 'slutt'],
+      ]) {
+        L.marker([point.lat, point.lon], {
+          icon: L.divIcon({
+            className: '',
+            html: `<span class="tip tip--${kind}" aria-hidden="true"></span>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+          }),
+          interactive: false,
+        }).addTo(suggestionEnds);
+      }
+    },
+
+    /**
+     * Området vi leter etter turforslag i: kartutsnittet, men aldri større enn
+     * det rutebasen svarer på i rimelig tid.
+     */
+    searchBox() {
+      const bounds = map.getBounds();
+      const center = bounds.getCenter();
+      const south = Math.max(bounds.getSouth(), center.lat - SEARCH_SPAN.lat / 2);
+      const north = Math.min(bounds.getNorth(), center.lat + SEARCH_SPAN.lat / 2);
+      const west = Math.max(bounds.getWest(), center.lng - SEARCH_SPAN.lon / 2);
+      const east = Math.min(bounds.getEast(), center.lng + SEARCH_SPAN.lon / 2);
+      return [south, west, north, east];
+    },
+
+    center() {
+      const { lat, lng } = map.getCenter();
+      return { lat, lon: lng };
+    },
+
+    zoom: () => map.getZoom(),
 
     invalidate() {
       map.invalidateSize();
