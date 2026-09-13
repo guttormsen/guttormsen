@@ -1,19 +1,25 @@
 # Turplan
 
-En turplanlegger for Norge som kjører i nettleseren. Den bruker Kartverkets
-offisielle kart og høydedata, den nasjonale Turrutebasen, værvarselet fra
-Meteorologisk institutt og snøskredvarselet fra NVE.
+En turapp for Norge som kjører i nettleseren. Den finner ekte, merkede turer
+der du er, og planlegger dem på Kartverkets kart – med høydeprofil fra
+laserdata, værvarsel time for time langs ruta og en turdagbok som teller
+kilometerne dine.
 
 Ingen konto, ingen sporing, ingen server: turen din bor i nettleseren din.
 
-**Kom i gang:** `npm start` og åpne <http://localhost:8080>.
+**Prøv den:** <https://guttormsen.github.io/guttormsen/>
+**Kjør lokalt:** `npm start` og åpne <http://localhost:8080>.
 
 ---
 
 ## Hva den gjør
 
+Appen har tre faner: **Finn tur**, **Turen** og **Dagbok**.
+
 | | |
 |---|---|
+| **Finn tur** | Henter navngitte, merkede turer fra den nasjonale rutebasen der du er, og setter løse rutesegmenter sammen til hele turer. Filtrer på lengde, vanskegrad, rundtur, merking og rutetype – eller trykk «Overrask meg». Ett trykk på et kort laster hele turen inn ferdig planlagt. |
+| **Turdagbok** | Marker en tur som gått, så samler den seg opp med kilometer og høydemeter. Fjorten merker å samle, og sammenligninger som gjør tallene til noe man kjenner igjen: «du har klatret 1,4 × Galdhøpiggen». |
 | **Ekte kart** | Kartverkets topografiske kart, gråtonekart, turkart og sjøkart – det samme grunnlaget som norgeskart.no. |
 | **Merkede ruter** | Turrutebasen legges oppå kartet: fotruter, skiløyper, sykkelruter og andre ruter. |
 | **Følg sti** | Nye strekninger legges automatisk langs faktiske stier i stedet for luftlinje. Stinettet settes sammen av Turrutebasen og OpenStreetMap. |
@@ -24,6 +30,14 @@ Ingen konto, ingen sporing, ingen server: turen din bor i nettleseren din.
 | **Snøskredvarsel** | Varsom-varselet for regionen ruta går gjennom, med faregrad og råd. |
 | **Langs ruta** | Hytter, gapahuker, topper, drikkevann, bålplasser, parkering og busstopp innenfor 700 meter. |
 | **Del og ta med** | Delbar lenke (hele turen ligger i URL-en), GPX ut og inn, lagring lokalt og offline-bruk. |
+
+### Enkelt foran, avansert bak
+
+Det som gjelder de fleste turer – marsjfart og når du starter – ligger framme.
+Underlag, sekkevekt, pauser, «følg sti» og GPX ligger sammenslått under
+**Avansert**. Kartlagene er flyttet ut av panelet og ligger på en knapp på
+selve kartet. Vær og sikkerhet er seksjoner i turen, ikke egne faner, slik at
+det er én ting å bla gjennom framfor fem å velge mellom.
 
 ### Litt om tidsestimatet
 
@@ -75,10 +89,14 @@ Skulle DNT åpne et API igjen, er `src/js/api/` stedet å legge det inn.
 ### Om dekningen
 
 Turrutebasen bygges på leveranser fra kommuner og turlag, og dekningen er
-ujevn. I Marka og langs de store turmålene er den god; i deler av høyfjellet
-finnes det områder uten en eneste kartlagt rute. OpenStreetMap dekker delvis
-opp, men ikke overalt. Når «Følg sti» ikke finner noe å følge, sier appen fra og
-tegner en rett strek i stedet – den later ikke som den vet noe den ikke vet.
+ujevn. Rundt Bergen finner appen over hundre navngitte turer; rundt Gjendesheim
+finnes det ikke én eneste kartlagt rute, verken der eller i OpenStreetMap.
+Attributtene varierer også: mange ruter mangler gradering, og da står de som
+«ugradert» framfor å bli gjettet på.
+
+Appen sier fra når den ikke finner noe, i stedet for å late som. «Følg sti»
+tegner en rett strek og forklarer hvorfor, og «Finn tur» foreslår at du tegner
+din egen der rutebasen er tom.
 
 ---
 
@@ -97,7 +115,9 @@ som helst statisk vert – GitHub Pages, Netlify, en katalog bak nginx.
 ### Publisering på GitHub Pages
 
 Arbeidsflyten i `.github/workflows/ci.yml` kjører testene og legger ut siden fra
-`main`. Slå på Pages under **Settings → Pages → Source: GitHub Actions**.
+`main` til <https://guttormsen.github.io/guttormsen/>. Skal dette settes opp i et
+nytt repo, må Pages slås på manuelt under **Settings → Pages → Source: GitHub
+Actions** – en arbeidsflyt får ikke lov til å gjøre det selv.
 
 ---
 
@@ -112,20 +132,22 @@ src/js/
   config.js             karttjenester, endepunkter, standardverdier
   state.js              turen som datamodell, med abonnement og lagring
   map.js                Leaflet: lag, markører, tegning av ruta
+  trips.js              turforslag: sy sammen ruter, filtrere og sortere
+  journal.js            turdagbok, merker og sammenligninger
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
   snap.js               stigraf og korteste veg («Følg sti»)
   profile.js            høydeprofilen som SVG, med tastaturstyring
   weather.js            sjekkpunkter, ankomsttider og dagslys
-  panels.js             alt innholdet i sidepanelet
+  panels.js             alt innholdet i panelet
   search.js             stedsnavnsøk som tilgjengelig combobox
   share.js              delbare lenker (polylinjekoding)
   gpx.js                GPX inn og ut
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium
+test/                   104 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 34 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen
@@ -141,8 +163,9 @@ er en ren funksjon, og det er de som er dekket av testene.
   søket følger ARIA-mønsteret for combobox.
 - Lys og mørk modus følger systemet. Fargene har kontrast nok til å leses ute i
   sollys.
-- Mobil først: bunnark som kan dras opp, minst 40 px trykkflater, ingen
-  vannrett rulling.
+- Mobil først: bunnark som kan dras opp, trykkflater på minst 38 px, filterrader
+  som rulles sidelengs med uttoning i kanten, ingen vannrett rulling. Røyktesten
+  måler både trykkflatene og rullingen.
 - `prefers-reduced-motion` slår av animasjonene.
 - Tjenestene er fellesgoder, og appen behandler dem deretter: svar
   mellomlagres, høydeoppslag går i bolker på 50 punkter, og Overpass prøves mot
