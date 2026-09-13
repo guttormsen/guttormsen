@@ -69,11 +69,9 @@ export function formatClock(date) {
   return new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
-/** onsdag 13. sep. */
+/** onsdag 13. september */
 export function formatDay(date) {
-  return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' }).format(
-    date,
-  );
+  return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
 }
 
 /** 59.8542° N, 8.6492° Ø – desimalgrader er det Kartverket bruker. */

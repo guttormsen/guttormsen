@@ -14,10 +14,24 @@ function ensureHost() {
 /**
  * Viser en kort melding nederst på skjermen.
  * @param {string} message
- * @param {{ kind?: 'info'|'ok'|'advarsel'|'feil', duration?: number }} [options]
+ * @param {{ kind?: 'info'|'ok'|'advarsel'|'feil', duration?: number,
+ *           action?: {label: string, onClick: () => void} }} [options]
  */
-export function toast(message, { kind = 'info', duration = 4200 } = {}) {
-  const node = el('div', { class: `toast toast--${kind}`, text: message });
+export function toast(message, { kind = 'info', duration = 4200, action } = {}) {
+  const node = el('div', { class: `toast toast--${kind}` }, [
+    el('span', { class: 'toast__text', text: message }),
+    action &&
+      el('button', {
+        class: 'toast__action',
+        type: 'button',
+        text: action.label,
+        onclick: (event) => {
+          event.stopPropagation();
+          action.onClick();
+          remove();
+        },
+      }),
+  ]);
   ensureHost().append(node);
   requestAnimationFrame(() => node.classList.add('is-in'));
   const remove = () => {

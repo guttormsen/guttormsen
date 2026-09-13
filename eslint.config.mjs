@@ -30,6 +30,7 @@ const browser = {
   alert: 'readonly',
   Node: 'readonly',
   getComputedStyle: 'readonly',
+  structuredClone: 'readonly',
   Event: 'readonly',
   Response: 'readonly',
   Request: 'readonly',

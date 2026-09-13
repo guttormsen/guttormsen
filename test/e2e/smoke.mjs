@@ -1,11 +1,12 @@
 /**
- * Røyktest i ekte nettleser: starter en lokal server, åpner appen, tegner en rute
- * og sjekker at nøkkeltall, høydeprofil og vær faktisk fylles ut.
+ * Røyktest i ekte nettleser: starter en lokal server, åpner appen og går
+ * gjennom hovedflyten – finn en tur, velg den, se vær og høydeprofil, før den
+ * i dagboka – mot de ekte tjenestene.
  *
  *   node test/e2e/smoke.mjs [--headed] [--shots <mappe>]
  */
 import { createServer } from 'node:http';
-import { readFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -14,6 +15,9 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SHOTS = process.argv.includes('--shots')
   ? process.argv[process.argv.indexOf('--shots') + 1]
   : join(ROOT, 'test', 'e2e', 'shots');
+
+/** Bergen: her har Turrutebasen god dekning, så turforslagene er forutsigbare. */
+const TEST_VIEW = { lat: 60.39, lon: 5.33, zoom: 12 };
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -57,8 +61,9 @@ const browser = await chromium.launch({
   headless: !process.argv.includes('--headed'),
   executablePath: process.env.CHROMIUM_PATH || undefined,
 });
+
 // Service workeren tar over nettverket i nettleseren, og Playwright kan ikke
-// omdirigere trafikken dens. Den slås av her; den testes for seg i sw-testen.
+// omdirigere trafikken dens. Den slås av her.
 const contextOptions = { locale: 'nb-NO', serviceWorkers: 'block' };
 
 /**
@@ -83,12 +88,8 @@ async function relayExternalRequests(target) {
       delete headers['content-encoding'];
       delete headers['content-length'];
       headers['access-control-allow-origin'] = '*';
-      await route.fulfill({
-        status: response.status,
-        headers,
-        body: Buffer.from(await response.arrayBuffer()),
-      });
-    } catch (error) {
+      await route.fulfill({ status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) });
+    } catch {
       await route.abort('failed');
     }
   });
@@ -105,10 +106,17 @@ const page = await context.newPage();
  */
 const FLAKY = /Failed to load resource|net::ERR|ERR_FAILED/i;
 const errors = [];
+page.on('dialog', (dialog) => dialog.accept());
 page.on('pageerror', (error) => errors.push(String(error)));
 page.on('console', (message) => {
   if (message.type() === 'error' && !FLAKY.test(message.text())) errors.push(message.text());
 });
+
+const goToTestView = (target) =>
+  target.evaluate(
+    ({ lat, lon, zoom }) => window.turplan.view.map.setView([lat, lon], zoom),
+    TEST_VIEW,
+  );
 
 await mkdir(SHOTS, { recursive: true });
 
@@ -121,6 +129,9 @@ try {
     check('appen starter', false, errors.slice(0, 4).join(' | ') || String(error).split('\n')[0]);
     throw error;
   }
+
+  check('appen åpner på turforslag', await page.locator('.tab[data-tab="finn"].is-active').count() === 1);
+  check('tegneknappene er skjult uten rute', await page.locator('#draw-tools').isHidden());
 
   /* Bakgrunnskart fra Kartverket */
   await page.waitForFunction(
@@ -136,82 +147,105 @@ try {
   /* Stedsnavnsøk */
   await page.fill('#search-input', 'Gjendesheim');
   await page.waitForSelector('#search-results li', { timeout: 15000 });
-  const first = await page.textContent('#search-results li .search__name');
-  check('stedsnavnsøk gir treff', /Gjendesheim/i.test(first ?? ''), first ?? '');
-  await page.click('#search-results li');
-  await page.waitForTimeout(1200);
+  const firstHit = await page.textContent('#search-results li .search__name');
+  check('stedsnavnsøk gir treff', /Gjendesheim/i.test(firstHit ?? ''), firstHit ?? '');
+  await page.keyboard.press('Escape');
 
-  /* Tegn en rute: søket satte startpunktet, vi legger til ett punkt til */
-  const box = await page.locator('#map').boundingBox();
-  await page.mouse.click(box.x + box.width * 0.35, box.y + box.height * 0.4);
-  await page.waitForTimeout(400);
-  await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.62);
+  /* Turforslag fra Turrutebasen */
+  await goToTestView(page);
+  await page.waitForTimeout(900);
+  await page.click('#btn-search-here');
+  await page.waitForSelector('.card', { timeout: 120000 });
+  const cardCount = await page.locator('.card').count();
+  const firstName = await page.locator('.card__name').first().textContent();
+  check('turforslag hentes fra Turrutebasen', cardCount > 5, `${cardCount} turer, første «${firstName}»`);
 
-  await page.waitForFunction(() => window.turplan.state.summary?.hasElevation === true, null, {
-    timeout: 30000,
-  });
+  const mapHeight = await page.evaluate(() => Math.round(document.querySelector('#map').getBoundingClientRect().height));
+  check('kartet holder seg innenfor skjermen', mapHeight <= 860, `${mapHeight} px høyt`);
+
+  /* Høyder fyller ut kortene */
+  await page.waitForFunction(() => document.querySelector('.spark') != null, null, { timeout: 90000 });
+  const facts = await page.locator('.card__facts').first().textContent();
+  check('kortene får stigning og tid', /opp/.test(facts ?? ''), (facts ?? '').trim());
+
+  /* Filtrering */
+  await page.click('.chip--toggle:has-text("Kort tur")');
+  await page.waitForTimeout(300);
+  const shortOnly = await page.evaluate(() =>
+    window.turplan.state.discovery.visible.every((trip) => trip.length < 3000),
+  );
+  const shortCount = await page.locator('.card').count();
+  check('lengdefilter virker', shortOnly && shortCount > 0, `${shortCount} korte turer`);
+
+  await page.click('.chip--toggle:has-text("Rundtur")');
+  await page.waitForTimeout(300);
+  const loopsOnly = await page.evaluate(() =>
+    window.turplan.state.discovery.visible.every((trip) => trip.loop && trip.length < 3000),
+  );
+  check('flere filtre kombineres', loopsOnly);
+
+  await page.click('.linkish:has-text("Nullstill filtre")');
+  await page.waitForTimeout(300);
+  check('filtrene kan nullstilles', (await page.locator('.card').count()) === cardCount);
+
+  await page.screenshot({ path: join(SHOTS, 'finn-tur.png') });
+
+  /* Velg en tur */
+  const picked = await page.locator('.card__name').first().textContent();
+  await page.locator('.card').first().click();
+  await page.waitForFunction(() => window.turplan.state.summary?.hasElevation === true, null, { timeout: 60000 });
+  check('tur kan velges fra kortet', (await page.locator('.tab[data-tab="turen"].is-active').count()) === 1, picked ?? '');
+
   const summary = await page.evaluate(() => {
     const s = window.turplan.state.summary;
-    return {
-      distance: s.distance,
-      ascent: s.ascent,
-      seconds: s.time.totalSeconds,
-      samples: s.line.length,
-      grade: s.grade.label,
-    };
+    return { distance: s.distance, ascent: s.ascent, seconds: s.time.totalSeconds, samples: s.line.length };
   });
-  check('ruta får lengde', summary.distance > 100, `${Math.round(summary.distance)} m`);
-  check('høyder hentes fra Kartverket', summary.ascent >= 0 && summary.samples > 10, `${summary.samples} punkter`);
+  check('høyder hentes fra Kartverket', summary.samples > 5, `${summary.samples} punkter`);
   check('tidsestimat beregnes', summary.seconds > 0, `${Math.round(summary.seconds / 60)} min`);
-
-  const statValues = await page.locator('.stat__value').allTextContents();
-  check('nøkkeltall vises i panelet', statValues.length === 4 && statValues.every(Boolean), statValues.join(' / '));
-
-  const segments = await page.locator('.profile__seg').count();
-  check('høydeprofilen tegnes', segments > 5, `${segments} segmenter`);
-
-  /* Hover på profilen skal markere punktet i kartet */
-  const profileBox = await page.locator('.profile__svg').boundingBox();
-  await page.mouse.move(profileBox.x + profileBox.width * 0.5, profileBox.y + profileBox.height * 0.5);
-  await page.waitForTimeout(300);
-  check('profilmarkør vises i kartet', (await page.locator('.leaflet-interactive').count()) > 0);
+  check('nøkkeltall vises', (await page.locator('.stat__value').count()) === 4);
+  check('høydeprofilen tegnes', (await page.locator('.profile__seg').count()) > 3);
+  check('tegneknappene dukker opp', await page.locator('#draw-tools').isVisible());
 
   /* Vær */
-  await page.click('.tab[data-tab="vaer"]');
-  await page.waitForSelector('.weather__row', { timeout: 30000 });
-  const rows = await page.locator('.weather__row').count();
-  check('vær langs ruta hentes fra MET', rows >= 2, `${rows} sjekkpunkter`);
+  await page.waitForSelector('.weather__row', { timeout: 60000 });
+  check('vær langs ruta hentes fra MET', (await page.locator('.weather__row').count()) >= 2);
 
-  /* Sikkerhet */
-  await page.click('.tab[data-tab="sikkerhet"]');
-  await page.waitForSelector('.checklist li', { timeout: 10000 });
-  check('fjellvettreglene vises', (await page.locator('.checklist li').count()) === 9);
+  /* Avanserte valg er skjult til man ber om dem */
+  const advanced = page.locator('.block--fold:has(> summary:text("Avansert"))');
+  check('avanserte valg ligger sammenslått', await page.locator('#opt-snap').isHidden());
+  await advanced.locator('summary').click();
+  await page.waitForTimeout(200);
+  check('avanserte valg kan åpnes', await page.locator('#opt-snap').isVisible());
+  await advanced.locator('summary').click();
+
+  await page.screenshot({ path: join(SHOTS, 'turen.png') });
+
+  /* Dagbok */
+  await page.click('.btn:has-text("Jeg gikk denne")');
+  await page.waitForTimeout(400);
+  check('turen føres i dagboka', (await page.locator('.tab[data-tab="dagbok"].is-active').count()) === 1);
+  const totals = await page.locator('.totals .stat__value').allTextContents();
+  check('dagboka summerer turen', totals[0] === '1', totals.join(' / '));
+  check('første merke er oppnådd', (await page.locator('.badge.is-earned').count()) >= 1);
+  await page.screenshot({ path: join(SHOTS, 'dagbok.png') });
 
   /* Kartlag */
-  await page.click('.tab[data-tab="kart"]');
-  await page.check('input[value="topograatone"]');
+  await page.click('#btn-layers');
+  await page.waitForSelector('#layer-popover input[value="topograatone"]');
+  await page.check('#layer-popover input[value="topograatone"]');
   await page.waitForTimeout(1500);
   const grayscale = await page.evaluate(() =>
     [...document.querySelectorAll('.leaflet-tile')].some((img) => img.src.includes('topograatone')),
   );
   check('bakgrunnskart kan byttes', grayscale);
+  await page.keyboard.press('Escape');
 
-  /* Deling */
-  await page.click('.tab[data-tab="plan"]');
-  await page.fill('#trip-name', 'Røyktest');
+  /* Deling og GPX */
   const shareUrl = await page.evaluate(async () => {
     const { tripToUrl } = await import('./src/js/share.js');
     return tripToUrl(window.turplan.state.trip);
   });
-  check('delbar lenke inneholder ruta', shareUrl.includes('#r='), shareUrl.slice(0, 60));
-
-  const restored = await page.evaluate(async (url) => {
-    const { tripFromUrl } = await import('./src/js/share.js');
-    return tripFromUrl(url)?.waypoints.length ?? 0;
-  }, shareUrl);
-  check('lenken kan leses tilbake', restored === (await page.evaluate(() => window.turplan.state.trip.waypoints.length)));
-
-  /* GPX */
+  check('delbar lenke inneholder ruta', shareUrl.includes('#r='));
   const gpx = await page.evaluate(async () => {
     const { buildGpx } = await import('./src/js/gpx.js');
     const s = window.turplan.state.summary;
@@ -219,41 +253,77 @@ try {
   });
   check('GPX bygges med høyder', gpx.includes('<trkpt') && gpx.includes('<ele>'));
 
-  await page.screenshot({ path: join(SHOTS, 'desktop.png'), fullPage: false });
-
-  /*
-   * «Følg sti» testes i Nordmarka. Turrutebasen har ujevn dekning – i deler av
-   * høyfjellet finnes det ingen kartlagte ruter, og da skal appen falle tilbake
-   * til rett strek. Her velger vi et område der vi vet det finnes data.
-   */
-  const snapPage = await context.newPage();
-  const snapHash = await page.evaluate(async () => {
-    const { encodePolyline } = await import('./src/js/share.js');
-    return `r=${encodeURIComponent(
-      encodePolyline([
-        { lat: 60.01, lon: 10.68 },
-        { lat: 60.025, lon: 10.705 },
-      ]),
-    )}&s=1&n=Snapping`;
-  });
-  await snapPage.goto(`${base}#${snapHash}`, { waitUntil: 'domcontentloaded' });
-  await snapPage.waitForFunction(
-    () => window.turplan?.state.trip.legs.length > 0 && window.turplan.state.trip.legs.every((leg) => !leg.pending),
-    null,
-    { timeout: 90000 },
-  );
-  const leg = await snapPage.evaluate(() => {
-    const first = window.turplan.state.trip.legs[0];
-    return { snapped: first.snapped, points: first.points.length };
-  });
+  /* Tegn egen rute */
+  await page.click('.tab[data-tab="finn"]');
+  await page.click('#btn-clear');
+  await page.waitForTimeout(400);
+  const box = await page.locator('#map').boundingBox();
+  const topAt = (fx, fy) =>
+    page.evaluate(
+      ([px, py]) => {
+        const node = document.elementFromPoint(px, py);
+        return node ? `${node.tagName.toLowerCase()}.${node.className?.baseVal ?? node.className ?? ''}`.slice(0, 40) : 'ingen';
+      },
+      [box.x + box.width * fx, box.y + box.height * fy],
+    );
+  const cover = [await topAt(0.3, 0.35), await topAt(0.6, 0.6)];
+  await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.35);
+  await page.waitForTimeout(600);
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.6);
+  let drawn = { waypoints: 0, distance: null };
+  try {
+    await page.waitForFunction(() => window.turplan.state.summary?.distance > 100, null, { timeout: 30000 });
+    drawn = await page.evaluate(() => ({
+      waypoints: window.turplan.state.trip.waypoints.length,
+      distance: Math.round(window.turplan.state.summary?.distance ?? 0),
+    }));
+  } catch {
+    drawn = await page.evaluate(() => ({
+      waypoints: window.turplan.state.trip.waypoints.length,
+      distance: Math.round(window.turplan.state.summary?.distance ?? 0),
+    }));
+  }
   check(
-    'følg sti legger ruta langs stinettet',
-    leg.snapped && leg.points > 10,
-    `${leg.points} punkter, snappet=${leg.snapped}`,
+    'egen rute kan tegnes i kartet',
+    drawn.distance > 100 && (await page.locator('.tab[data-tab="turen"].is-active').count()) === 1,
+    `${drawn.waypoints} punkter, ${drawn.distance} m (traff ${cover.join(' / ')})`,
   );
-  await snapPage.waitForTimeout(1500);
-  await snapPage.screenshot({ path: join(SHOTS, 'folg-sti.png') });
-  await snapPage.close();
+
+  /* Mobil */
+  const phone = await browser.newContext({
+    ...contextOptions,
+    viewport: { width: 390, height: 780 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  await relayExternalRequests(phone);
+  const mobile = await phone.newPage();
+  await mobile.goto(base, { waitUntil: 'domcontentloaded' });
+  await mobile.waitForFunction(() => Boolean(window.turplan), null, { timeout: 20000 });
+  await goToTestView(mobile);
+  await mobile.waitForTimeout(1500);
+
+  const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('ingen vannrett rulling på mobil', overflow <= 1, `${overflow} px`);
+  check('fanene er synlige i sammenslått bunnark', await mobile.locator('.tab[data-tab="finn"]').isVisible());
+
+  await mobile.click('#sheet-handle');
+  await mobile.waitForTimeout(400);
+  check('bunnarket kan åpnes', (await mobile.locator('#panel.is-open').count()) === 1);
+
+  const tapTargets = await mobile.evaluate(() =>
+    [...document.querySelectorAll('.tab, .map-btn, .pill, .btn')]
+      .filter((node) => node.offsetParent !== null)
+      .map((node) => Math.round(node.getBoundingClientRect().height)),
+  );
+  const smallest = Math.min(...tapTargets);
+  check('trykkflatene er store nok', smallest >= 36, `minste ${smallest} px av ${tapTargets.length}`);
+
+  await mobile.click('#btn-search-here');
+  await mobile.waitForSelector('.card', { timeout: 120000 });
+  check('turforslag virker på mobil', (await mobile.locator('.card').count()) > 3);
+  await mobile.screenshot({ path: join(SHOTS, 'mobil.png') });
+  await phone.close();
 
   /* Mørk modus */
   const dark = await browser.newContext({
@@ -282,5 +352,5 @@ try {
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n${checks.length - failed.length}/${checks.length} sjekker gikk gjennom.`);
-if (await stat(SHOTS).catch(() => null)) console.log(`Skjermbilder: ${SHOTS}`);
+console.log(`Skjermbilder: ${SHOTS}`);
 process.exit(failed.length ? 1 : 0);

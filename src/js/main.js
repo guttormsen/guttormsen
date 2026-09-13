@@ -1,13 +1,14 @@
 /**
  * Oppstart og lim. Her kobles kart, tilstand, API-er og panel sammen.
  */
-import { APP, DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
+import { DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
 import { $, debounce, formatDistance, render } from './util.js';
 import { densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
 import { fetchElevations } from './api/hoydedata.js';
 import { fetchAvalancheWarning } from './api/varsom.js';
 import { fetchPois } from './api/overpass.js';
+import { fetchFotruterForDiscovery } from './api/turrutebasen.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -15,6 +16,8 @@ import { createSearch } from './search.js';
 import { createSnapper, SNAP_REASONS } from './snap.js';
 import { buildGpx, parseGpx, safeFilename } from './gpx.js';
 import { copyText, downloadText, toast } from './ui.js';
+import { DEFAULT_FILTERS, buildTrips, enrichTrip, filterTrips, sampleForCard, surpriseMe } from './trips.js';
+import { entries as journalEntries, logTrip, removeEntry } from './journal.js';
 import * as panels from './panels.js';
 import * as S from './state.js';
 import { tripFromUrl, tripToUrl } from './share.js';
@@ -30,54 +33,39 @@ const checklist = prefs.checklist ?? [];
 
 const snapper = createSnapper();
 let watchId = null;
+let myPosition = null;
 /** Øker for hver omregning, så gamle svar kan forkastes. */
 let generation = 0;
 let inflight = null;
+let activeTab = 'finn';
 
 const view = createMap($('#map'), {
-  onMapClicked: (point) => {
-    S.addWaypoint(point);
-  },
-  onLineClicked: (point, segmentIndex) => {
-    const legIndex = legIndexForSegment(segmentIndex);
-    if (legIndex == null) return;
-    S.insertWaypoint(legIndex, point);
-  },
+  onMapClicked: (point) => S.addWaypoint(point),
+  onLineClicked: (point, segmentIndex) => S.insertWaypoint(legIndexForSegment(segmentIndex), point),
   onWaypointMoved: (id, point) => S.moveWaypoint(id, point),
   onWaypointClicked: (id) => S.removeWaypoint(id),
-  onPoiClicked: (poi) => {
-    S.state.selectedPoi = poi;
-    selectTab('rute');
-    openSheet();
-    renderAll();
-  },
+  onPoiClicked: (poi) => view.flyTo(poi, 15),
+  onMoveEnd: () => updateSearchHere(),
 });
 view.setBasemap(basemap);
 for (const [id, visible] of Object.entries(trailState)) view.setTrailLayer(id, visible);
 
-const profile = createProfile($('#profile'), {
-  onHover: (point) => view.showHover(point),
-});
+const profile = createProfile($('#profile'), { onHover: (point) => view.showHover(point) });
 
 createSearch(
   { input: $('#search-input'), listbox: $('#search-results'), status: $('#search-status') },
   {
     onPick: (place) => {
-      view.flyTo(place, place.type?.includes('Fjell') ? 14 : 13);
-      // Første søk setter startpunktet – da slipper brukeren å lete etter det i kartet.
-      if (!S.state.trip.waypoints.length) {
-        S.addWaypoint({ lat: place.lat, lon: place.lon, name: place.name });
-      }
+      view.flyTo(place, 13);
+      // Etter et søk er det nesten alltid turforslag brukeren er ute etter.
+      selectTab('finn');
+      setTimeout(() => loadDiscovery(), 900);
     },
   },
 );
 
 /* ---------- Etapper og geometri ---------- */
 
-/**
- * Linja slik den tegnes, sammen med hvor hver etappe slutter.
- * Grensene brukes til å finne ut hvilken etappe brukeren klikket på.
- */
 function routeLineWithBoundaries() {
   const line = [];
   const boundaries = [];
@@ -109,16 +97,14 @@ function legIndexForSegment(segmentIndex) {
 /** Bygger etapper som mangler geometri – med sti-snapping når det er slått på. */
 async function buildLegs(signal) {
   const { trip } = S.state;
-  const pendingLegs = trip.legs.filter((leg) => leg.pending);
-  if (!pendingLegs.length) return false;
+  if (!trip.legs.some((leg) => leg.pending)) return;
 
   if (!trip.options.snapToTrail) {
-    for (const leg of trip.legs) if (leg.pending) leg.pending = false;
-    return false;
+    for (const leg of trip.legs) leg.pending = false;
+    return;
   }
 
   S.state.loading.snap = true;
-  renderStats();
   const reasons = new Set();
 
   try {
@@ -130,11 +116,11 @@ async function buildLegs(signal) {
       if (!from || !to) continue;
       try {
         const result = await snapper.connect(from, to, { signal });
-        if (signal.aborted) return false;
+        if (signal.aborted) return;
         trip.legs[i] = { points: result.points, snapped: result.snapped, pending: false };
         if (!result.snapped && result.reason) reasons.add(result.reason);
       } catch (error) {
-        if (signal.aborted) return false;
+        if (signal.aborted) return;
         console.warn('Sti-snapping feilet', error);
         trip.legs[i] = { points: leg.points, snapped: false, pending: false };
         reasons.add('feil');
@@ -146,17 +132,13 @@ async function buildLegs(signal) {
   }
 
   for (const reason of reasons) toast(SNAP_REASONS[reason] ?? SNAP_REASONS.feil, { kind: 'advarsel' });
-  return true;
 }
 
 /**
  * Lager punktrekka vi slår opp høyder for: tett nok til å følge terrenget,
  * men aldri flere punkter enn Kartverket bør bli spurt om.
- *
- * @returns {Array<{lat:number,lon:number}>}
  */
 function buildSampleLine() {
-  // Snappede etapper har mange nære punkter; forenkling fjerner støy uten å flytte ruta.
   const legs = S.state.trip.legs
     .map((leg) => (leg.points.length > 3 ? simplify(leg.points, 6) : leg.points))
     .filter((points) => points.length >= 2);
@@ -174,7 +156,6 @@ function buildSampleLine() {
     }
   }
 
-  // Fortetting kan gi flere punkter enn taket når ruta har mange knekk – tynn ut.
   if (sample.length > ELEVATION_MAX_SAMPLES) {
     const step = Math.ceil(sample.length / ELEVATION_MAX_SAMPLES);
     return sample.filter((_, i) => i % step === 0 || i === sample.length - 1);
@@ -192,9 +173,9 @@ async function recompute(reason) {
   const controller = new AbortController();
   inflight = controller;
 
-  const geometryChanged = ['add', 'move', 'remove', 'insert', 'reverse', 'roundtrip', 'load', 'reset', 'legs', 'options-geometry'].includes(
-    reason,
-  );
+  const geometryChanged = [
+    'add', 'move', 'remove', 'insert', 'reverse', 'roundtrip', 'load', 'reset', 'legs', 'options-geometry',
+  ].includes(reason);
 
   if (geometryChanged) {
     try {
@@ -210,19 +191,12 @@ async function recompute(reason) {
   view.drawWaypoints(S.state.trip.waypoints);
   view.drawLine(line, { pending: S.state.loading.snap });
 
-  if (line.length < 2) {
+  const sample = line.length >= 2 ? buildSampleLine() : [];
+  if (sample.length < 2) {
     S.state.summary = null;
     S.state.weather = null;
     S.state.pois = [];
     S.state.avalanche = null;
-    profile.update(null);
-    renderAll();
-    return;
-  }
-
-  const sample = buildSampleLine();
-  if (sample.length < 2) {
-    S.state.summary = null;
     profile.update(null);
     renderAll();
     return;
@@ -254,8 +228,7 @@ async function recompute(reason) {
   if (id !== generation) return;
   // Slo høydeoppslaget feil, regner vi videre uten høyder framfor å blande inn
   // tallene fra forrige rute.
-  const elevations =
-    S.state.elevationCache?.length === sample.length ? S.state.elevationCache : [];
+  const elevations = S.state.elevationCache?.length === sample.length ? S.state.elevationCache : [];
   S.state.summary = summarise(sample, elevations, S.state.trip.options);
   profile.update(S.state.summary);
   renderAll();
@@ -266,8 +239,7 @@ async function recompute(reason) {
 
 /**
  * Henter alt som avhenger av hvor ruta går: vær, sol, skred og severdigheter.
- * Hver kilde tegnes så snart den svarer – Overpass bruker gjerne et titalls
- * sekunder, og været skal ikke måtte vente på den.
+ * Hver kilde tegnes så snart den svarer.
  */
 function loadContext() {
   const id = generation;
@@ -278,8 +250,7 @@ function loadContext() {
 
   S.state.loading.weather = true;
   S.state.loading.pois = true;
-  renderPane('vaer');
-  renderPane('rute');
+  renderPane('turen');
 
   Promise.all([loadWeather(buildCheckpoints(summary, start)), loadSun(summary.line[0], start)])
     .then(([weather, sun]) => {
@@ -291,15 +262,14 @@ function loadContext() {
     .finally(() => {
       if (!fresh()) return;
       S.state.loading.weather = false;
-      renderPane('vaer');
-      renderPane('sikkerhet');
+      renderPane('turen');
     });
 
   fetchAvalancheWarning(summary.line[0], { from: start })
     .then((avalanche) => {
       if (!fresh()) return;
       S.state.avalanche = avalanche;
-      renderPane('sikkerhet');
+      renderPane('turen');
     })
     .catch(() => {});
 
@@ -313,7 +283,7 @@ function loadContext() {
     .finally(() => {
       if (!fresh()) return;
       S.state.loading.pois = false;
-      renderPane('rute');
+      renderPane('turen');
     });
 }
 
@@ -323,7 +293,7 @@ async function loadWeatherOnly() {
   if (!summary) return;
   const id = generation;
   S.state.loading.weather = true;
-  renderPane('vaer');
+  renderPane('turen');
   const start = S.startDate();
   const [weather, sun] = await Promise.all([
     loadWeather(buildCheckpoints(summary, start)).catch(() => null),
@@ -333,13 +303,149 @@ async function loadWeatherOnly() {
   S.state.weather = weather;
   S.state.sun = sun;
   S.state.loading.weather = false;
-  renderPane('vaer');
-  renderPane('sikkerhet');
+  renderPane('turen');
 }
 
-/* ---------- Panel ---------- */
+/* ---------- Finn tur ---------- */
+
+let discoveryRun = 0;
+
+async function loadDiscovery() {
+  const run = ++discoveryRun;
+  const box = view.searchBox();
+  const discovery = S.state.discovery;
+  discovery.loading = true;
+  discovery.error = false;
+  discovery.box = box;
+  renderPane('finn');
+  updateSearchHere();
+
+  try {
+    const segments = await fetchFotruterForDiscovery(box);
+    if (run !== discoveryRun) return;
+    discovery.all = buildTrips(segments);
+    discovery.truncated = segments.length >= 1200;
+    discovery.searched = true;
+    applyFilters();
+    loadCardElevations(run);
+  } catch (error) {
+    if (run !== discoveryRun) return;
+    console.warn('Turrutebasen feilet', error);
+    discovery.error = true;
+    discovery.searched = true;
+  } finally {
+    if (run === discoveryRun) {
+      discovery.loading = false;
+      renderPane('finn');
+      updateSearchHere();
+    }
+  }
+}
+
+function applyFilters() {
+  const discovery = S.state.discovery;
+  const origin = myPosition ?? view.center();
+  discovery.visible = filterTrips(discovery.all, S.state.filters, origin);
+  discovery.total = discovery.all.length;
+  renderPane('finn');
+}
+
+/** Henter grove høyder for de øverste kortene, så de får stigning og tid. */
+async function loadCardElevations(run) {
+  const targets = S.state.discovery.visible.filter((trip) => trip.ascent == null).slice(0, 12);
+  if (!targets.length) return;
+
+  const samples = targets.map((trip) => sampleForCard(trip.points));
+  const flat = samples.flat();
+  let elevations;
+  try {
+    elevations = await fetchElevations(flat);
+  } catch (error) {
+    console.warn('Høyder for turforslag feilet', error);
+    return;
+  }
+  if (run !== discoveryRun) return;
+
+  let cursor = 0;
+  const enriched = new Map();
+  targets.forEach((trip, index) => {
+    const sample = samples[index];
+    const slice = elevations.slice(cursor, cursor + sample.length);
+    cursor += sample.length;
+    enriched.set(trip.id, enrichTrip(trip, sample, slice, S.state.trip.options));
+  });
+
+  const merge = (trip) => enriched.get(trip.id) ?? trip;
+  S.state.discovery.all = S.state.discovery.all.map(merge);
+  applyFilters();
+}
+
+/** Viser eller skjuler «Finn turer her» etter hvor kartet står. */
+function updateSearchHere() {
+  const button = $('#btn-search-here');
+  const zoomedEnough = view.zoom() >= 10;
+  const discovery = S.state.discovery;
+  const moved =
+    !discovery.box ||
+    Math.abs((discovery.box[0] + discovery.box[2]) / 2 - view.center().lat) > 0.03 ||
+    Math.abs((discovery.box[1] + discovery.box[3]) / 2 - view.center().lon) > 0.06;
+  button.hidden = activeTab !== 'finn' || discovery.loading || !zoomedEnough || (!moved && discovery.searched);
+  button.textContent = discovery.searched ? '🔍 Søk i dette området' : '🔍 Finn turer her';
+}
+
+/* ---------- Handlinger ---------- */
 
 const handlers = {
+  /* Finn tur */
+  onSearchHere: () => loadDiscovery(),
+  onToggleLength: (id) => {
+    const list = S.state.filters.lengths;
+    S.state.filters.lengths = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+    applyFilters();
+  },
+  onToggleGrade: (id) => {
+    const list = S.state.filters.grades;
+    S.state.filters.grades = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+    applyFilters();
+  },
+  onShape: (shape) => {
+    S.state.filters.shape = S.state.filters.shape === shape ? null : shape;
+    applyFilters();
+  },
+  onSpecial: (id) => {
+    S.state.filters.special = S.state.filters.special === id ? null : id;
+    applyFilters();
+  },
+  onToggleMarked: () => {
+    S.state.filters.markedOnly = !S.state.filters.markedOnly;
+    applyFilters();
+  },
+  onResetFilters: () => {
+    S.state.filters = { ...DEFAULT_FILTERS };
+    applyFilters();
+  },
+  onPreviewTrip: (trip) => {
+    S.state.preview = trip;
+    view.showSuggestion(trip?.points ?? null);
+  },
+  onPickTrip: (trip) => {
+    view.showSuggestion(null);
+    S.setTrip(S.tripFromSuggestion(trip), 'load');
+    view.fitRoute(trip.points);
+    selectTab('turen');
+    toast(`«${trip.name}» er lagt inn. Juster gjerne start og fart.`, { kind: 'ok' });
+  },
+  onSurprise: () => {
+    const trip = surpriseMe(S.state.discovery.visible);
+    if (trip) handlers.onPickTrip(trip);
+  },
+  onDrawOwn: () => {
+    selectTab('turen');
+    toast('Trykk i kartet for å sette startpunktet.');
+  },
+  onGoDiscover: () => selectTab('finn'),
+
+  /* Turen */
   onName: (name) => S.setName(name),
   onStartTime: (date) => S.setStartTime(date),
   onOptions: (patch) => S.setOptions(patch),
@@ -348,54 +454,100 @@ const handlers = {
   onRemoveWaypoint: (id) => S.removeWaypoint(id),
   onFocusWaypoint: (waypoint) => view.flyTo(waypoint, 14),
   onFocusPoi: (poi) => view.flyTo(poi, 15),
+  onToggleCheck: (index, value) => {
+    checklist[index] = value;
+    persistPrefs();
+    renderPane('turen');
+  },
+  onExportGpx: () => exportGpx(),
+  onImportGpx: (event) => importGpx(event),
+
+  /* Kartlag */
   onBasemap: (id) => {
     basemap = id;
     view.setBasemap(id);
     persistPrefs();
-    renderPane('kart');
+    renderLayerPopover();
   },
   onTrailLayer: (id, visible) => {
     trailState[id] = visible;
     view.setTrailLayer(id, visible);
     persistPrefs();
   },
-  onOpenTrip: (trip) => {
-    S.setTrip({ ...trip, id: trip.id }, 'load');
-    toast(`Åpnet «${trip.name}».`, { kind: 'ok' });
+
+  /* Dagbok */
+  entries: () => journalEntries(),
+  onRemoveEntry: (id) => {
+    removeEntry(id);
+    renderPane('dagbok');
   },
-  onDeleteTrip: (trip) => {
-    S.deleteTrip(trip.id);
-    renderPane('turer');
+  onOpenTrip: (saved) => {
+    S.setTrip({ ...saved }, 'load');
+    selectTab('turen');
+    toast(`Åpnet «${saved.name}».`, { kind: 'ok' });
   },
+  onDeleteTrip: (saved) => {
+    S.deleteTrip(saved.id);
+    renderPane('dagbok');
+  },
+
+  /* Bunnrad */
+  onLogTrip: () => {
+    const summary = S.state.summary;
+    if (!summary) return;
+    const name = S.state.trip.name || suggestName();
+    const entry = logTrip({
+      name,
+      distance: summary.distance,
+      ascent: summary.ascent,
+      seconds: summary.time.totalSeconds,
+      maxElevation: summary.maxElevation,
+      loop: S.state.trip.waypoints.length > 1 && summary.distances.at(-1) > 0 && isLoop(summary),
+      date: S.state.trip.startTime,
+    });
+    toast(`«${entry.name}» er ført i dagboka. Godt gått!`, { kind: 'ok' });
+    selectTab('dagbok');
+  },
+  onSave: () => {
+    if (!S.state.trip.name) S.setName(suggestName());
+    const record = S.saveTrip();
+    toast(`Lagret «${record.name}» på denne enheten.`, { kind: 'ok' });
+  },
+  onShare: () => share(),
 };
+
+const isLoop = (summary) => {
+  const first = summary.line[0];
+  const last = summary.line.at(-1);
+  return Math.abs(first.lat - last.lat) < 0.003 && Math.abs(first.lon - last.lon) < 0.006;
+};
+
+/* ---------- Tegning av panelet ---------- */
 
 const PANES = {
-  plan: () => panels.renderPlan(S.state.trip, S.state.summary, S.startDate(), handlers),
-  vaer: () => panels.renderWeather(S.state.weather, S.state.sun, S.state.loading.weather, S.startDate()),
-  sikkerhet: () =>
-    panels.renderSafety(
-      S.state.summary,
-      S.state.sun,
-      S.state.avalanche,
-      S.startDate(),
-      checklist,
-      (index, value) => {
-        checklist[index] = value;
-        persistPrefs();
+  finn: () => panels.renderDiscover(S.state.discovery, S.state.filters, handlers),
+  turen: () =>
+    panels.renderTrip(
+      {
+        trip: S.state.trip,
+        summary: S.state.summary,
+        startTime: S.startDate(),
+        weather: S.state.weather,
+        sun: S.state.sun,
+        avalanche: S.state.avalanche,
+        pois: S.state.pois,
+        loading: S.state.loading,
+        checklist,
       },
+      handlers,
     ),
-  rute: () => panels.renderPois(S.state.pois, S.state.summary, S.state.loading.pois, handlers),
-  kart: () => panels.renderLayers({ basemap }, trailState, handlers),
-  turer: () => panels.renderSavedTrips(S.savedTrips(), handlers),
+  dagbok: () => panels.renderJournal(S.savedTrips(), handlers),
 };
-
-let activeTab = 'plan';
 
 function renderPane(name) {
   const node = $(`#pane-${name}`);
-  if (!node) return;
   // Skjulte faner tegnes først når de vises – sparer arbeid ved hvert tastetrykk.
-  if (node.hidden && name !== activeTab) return;
+  if (!node || name !== activeTab) return;
   render(node, PANES[name]().flat().filter(Boolean));
 }
 
@@ -404,14 +556,15 @@ function renderStats() {
 }
 
 function renderAll() {
-  renderStats();
+  const hasRoute = Boolean(S.state.summary);
+  $('#route-header').hidden = !hasRoute || activeTab === 'dagbok';
+  $('#panel-footer').hidden = !hasRoute;
+  $('#draw-tools').hidden = S.state.trip.waypoints.length === 0;
+
+  if (hasRoute) renderStats();
+  render($('#panel-footer'), panels.renderFooter(S.state.summary, handlers).flat().filter(Boolean));
   renderPane(activeTab);
-  $('#profile-empty').hidden = Boolean(S.state.summary);
-  $('#btn-undo').disabled = S.state.trip.waypoints.length === 0;
-  $('#btn-clear').disabled = S.state.trip.waypoints.length === 0;
-  $('#btn-save').disabled = S.state.trip.waypoints.length < 2;
-  $('#btn-share').disabled = S.state.trip.waypoints.length < 1;
-  $('#btn-gpx').disabled = !S.state.summary;
+  updateSearchHere();
 }
 
 function selectTab(name) {
@@ -421,17 +574,17 @@ function selectTab(name) {
     button.classList.toggle('is-active', selected);
     button.setAttribute('aria-selected', String(selected));
   }
-  for (const pane of document.querySelectorAll('.pane')) {
-    pane.hidden = pane.dataset.pane !== name;
-  }
-  renderPane(name);
+  for (const pane of document.querySelectorAll('.pane')) pane.hidden = pane.dataset.pane !== name;
+  if (name !== 'finn') view.showSuggestion(null);
+  openSheet(true);
+  renderAll();
 }
 
 for (const button of document.querySelectorAll('.tab')) {
   button.addEventListener('click', () => selectTab(button.dataset.tab));
 }
 
-/* ---------- Bunnark på mobil ---------- */
+/* ---------- Bunnark ---------- */
 
 const panel = $('#panel');
 const sheetHandle = $('#sheet-handle');
@@ -443,7 +596,31 @@ function openSheet(open = true) {
 }
 sheetHandle.addEventListener('click', () => openSheet(!panel.classList.contains('is-open')));
 
-/* ---------- Verktøyknapper ---------- */
+/* ---------- Kartlag ---------- */
+
+const layerPopover = $('#layer-popover');
+const layerButton = $('#btn-layers');
+
+function renderLayerPopover() {
+  render(layerPopover, panels.renderLayers(basemap, trailState, handlers).flat().filter(Boolean));
+}
+
+layerButton.addEventListener('click', () => {
+  const open = layerPopover.hidden;
+  layerPopover.hidden = !open;
+  layerButton.setAttribute('aria-expanded', String(open));
+  if (open) renderLayerPopover();
+});
+document.addEventListener('click', (event) => {
+  if (layerPopover.hidden) return;
+  if (layerPopover.contains(event.target) || layerButton.contains(event.target)) return;
+  layerPopover.hidden = true;
+  layerButton.setAttribute('aria-expanded', 'false');
+});
+
+/* ---------- Verktøy på kartet ---------- */
+
+$('#btn-search-here').addEventListener('click', () => loadDiscovery());
 
 $('#btn-undo').addEventListener('click', () => {
   const last = S.state.trip.waypoints.at(-1);
@@ -451,8 +628,13 @@ $('#btn-undo').addEventListener('click', () => {
 });
 
 $('#btn-clear').addEventListener('click', () => {
-  if (S.state.trip.waypoints.length > 1 && !confirm('Vil du fjerne hele ruta?')) return;
+  if (!S.state.trip.waypoints.length) return;
+  // Ingen bekreftelsesdialog: det er raskere å angre enn å svare på et spørsmål.
+  const previous = structuredClone(S.state.trip);
   S.resetTrip();
+  toast('Ruta er tømt.', {
+    action: { label: 'Angre', onClick: () => S.setTrip(previous, 'load') },
+  });
 });
 
 $('#btn-locate').addEventListener('click', () => {
@@ -463,6 +645,7 @@ $('#btn-locate').addEventListener('click', () => {
   if (watchId != null) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
+    myPosition = null;
     view.showPosition(null);
     $('#btn-locate').classList.remove('is-on');
     return;
@@ -475,8 +658,13 @@ $('#btn-locate').addEventListener('click', () => {
         lon: position.coords.longitude,
         accuracy: position.coords.accuracy,
       };
+      const first = myPosition == null;
+      myPosition = point;
       view.showPosition(point);
-      if (!view.map.getBounds().contains([point.lat, point.lon])) view.flyTo(point, 14);
+      if (first) {
+        view.flyTo(point, 13);
+        if (activeTab === 'finn' && !S.state.discovery.searched) setTimeout(() => loadDiscovery(), 1000);
+      }
     },
     (error) => {
       $('#btn-locate').classList.remove('is-on');
@@ -492,69 +680,71 @@ $('#btn-locate').addEventListener('click', () => {
   );
 });
 
-$('#btn-save').addEventListener('click', () => {
-  if (!S.state.trip.name) S.setName(suggestName());
-  const record = S.saveTrip();
-  toast(`Lagret «${record.name}» på denne enheten.`, { kind: 'ok' });
-  renderPane('turer');
-});
+/* ---------- Del, GPX og navn ---------- */
 
-$('#btn-share').addEventListener('click', async () => {
+async function share() {
   const url = tripToUrl(S.state.trip);
   history.replaceState(null, '', url);
   const name = S.state.trip.name || suggestName();
+  const summary = S.state.summary;
+  const text = summary
+    ? `${name} – ${formatDistance(summary.distance)}, ${Math.round(summary.ascent)} høydemeter`
+    : name;
+
   if (navigator.share) {
     try {
-      await navigator.share({ title: `${name} – Turplan`, url });
+      await navigator.share({ title: `${name} – Turplan`, text, url });
       return;
     } catch {
       // Brukeren avbrøt delingen; fall tilbake til kopiering.
     }
   }
-  toast((await copyText(url)) ? 'Lenken er kopiert.' : 'Kunne ikke kopiere lenken.', {
-    kind: 'ok',
-  });
-});
+  toast((await copyText(url)) ? 'Lenken er kopiert.' : 'Kunne ikke kopiere lenken.', { kind: 'ok' });
+}
 
-$('#btn-gpx').addEventListener('click', () => {
+function exportGpx() {
   const summary = S.state.summary;
   if (!summary) return;
   const name = S.state.trip.name || suggestName();
-  const gpx = buildGpx({
-    name,
-    line: summary.line,
-    elevations: summary.elevations,
-    waypoints: S.state.trip.waypoints.map((w, i) => ({ ...w, name: w.name ?? `Punkt ${i + 1}` })),
-  });
-  downloadText(safeFilename(name), gpx);
-});
+  downloadText(
+    safeFilename(name),
+    buildGpx({
+      name,
+      line: summary.line,
+      elevations: summary.elevations,
+      waypoints: S.state.trip.waypoints.map((w, i) => ({ ...w, name: w.name ?? `Punkt ${i + 1}` })),
+    }),
+  );
+}
 
-$('#input-gpx').addEventListener('change', async (event) => {
+async function importGpx(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
     const parsed = parseGpx(await file.text());
     const source = parsed.track.length ? parsed.track : parsed.waypoints;
     // Et GPX-spor kan ha tusenvis av punkter; vi beholder formen, ikke hvert måleavvik.
-    const waypoints = simplify(source, 25).map((p) => ({ lat: p.lat, lon: p.lon, name: null }));
-    if (waypoints.length < 2) throw new Error('Sporet har for få punkter.');
+    const points = simplify(source, 15).map((p) => ({ lat: p.lat, lon: p.lon }));
+    if (points.length < 2) throw new Error('Sporet har for få punkter.');
+    const waypoints = [
+      { ...points[0], name: null, id: 'gpx-start' },
+      { ...points.at(-1), name: null, id: 'gpx-slutt' },
+    ];
     S.setTrip({
       name: parsed.name ?? file.name.replace(/\.gpx$/i, ''),
-      waypoints: waypoints.map((w, i) => ({ ...w, id: `gpx-${i}` })),
-      legs: waypoints.slice(1).map((point, i) => ({
-        points: [waypoints[i], point],
-        snapped: false,
-        pending: false,
-      })),
+      waypoints,
+      legs: [{ points, snapped: true, pending: false }],
       options: S.state.trip.options,
     });
-    toast(`Leste inn ${waypoints.length} punkter fra ${file.name}.`, { kind: 'ok' });
+    selectTab('turen');
+    view.fitRoute(points);
+    toast(`Leste inn ${points.length} punkter fra ${file.name}.`, { kind: 'ok' });
   } catch (error) {
     toast(error.message || 'Klarte ikke å lese GPX-filen.', { kind: 'feil' });
   } finally {
     event.target.value = '';
   }
-});
+}
 
 function suggestName() {
   const first = S.state.trip.waypoints[0];
@@ -571,6 +761,14 @@ function persistPrefs() {
 /* ---------- Tastatursnarveier ---------- */
 
 document.addEventListener('keydown', (event) => {
+  // Escape lukker kartlagsvinduet uansett hvor fokus står – også når det står
+  // i en av radioknappene inni vinduet.
+  if (event.key === 'Escape' && !layerPopover.hidden) {
+    layerPopover.hidden = true;
+    layerButton.setAttribute('aria-expanded', 'false');
+    layerButton.focus();
+    return;
+  }
   if (event.target.matches('input, textarea, select')) return;
   if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
     $('#btn-undo').click();
@@ -588,6 +786,7 @@ S.on('trip', ({ reason }) => {
     renderAll();
     return;
   }
+  if (['add', 'insert', 'move'].includes(reason) && activeTab === 'finn') selectTab('turen');
   recompute(reason);
 });
 
@@ -603,11 +802,11 @@ function boot() {
       legs: waypoints.slice(1).map((point, i) => ({ points: [waypoints[i], point], snapped: false, pending: true })),
       options: { ...DEFAULT_OPTIONS, ...S.state.trip.options, ...clean(shared.options) },
     });
+    selectTab('turen');
     setTimeout(() => view.fitRoute(S.routeLine()), 200);
-    openSheet(window.matchMedia('(min-width: 900px)').matches);
   } else {
-    renderAll();
-    selectTab('plan');
+    selectTab('finn');
+    openSheet(window.matchMedia('(min-width: 900px)').matches);
   }
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -623,4 +822,4 @@ const clean = (object) =>
 boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
-window.turplan = { state: S.state, view, version: APP.version };
+window.turplan = { state: S.state, view, loadDiscovery, selectTab };

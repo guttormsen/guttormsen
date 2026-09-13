@@ -13,8 +13,8 @@ import { elevationStats, estimateTime, fillGaps } from './route.js';
 
 /** Endepunkter nærmere hverandre enn dette regnes som samme punkt. */
 const JOIN_TOLERANCE_M = 30;
-/** Kortere enn dette er ikke en tur. */
-const MIN_TRIP_LENGTH_M = 400;
+/** Kortere enn dette er en stistump, ikke en tur. */
+const MIN_TRIP_LENGTH_M = 800;
 /** Navn som dekker et helt stinett, ikke én tur. */
 const NETWORK_LENGTH_M = 60000;
 const NETWORK_PARTS = 25;
@@ -258,8 +258,11 @@ export function filterTrips(trips, filters, origin = null) {
   return matches
     .map((trip) => ({ ...trip, distanceFromYou: origin ? haversine(origin, trip.start) : null }))
     .sort((a, b) => {
-      if (origin) return a.distanceFromYou - b.distanceFromYou;
-      return b.length - a.length;
+      if (!origin) return b.length - a.length;
+      // Innenfor samme nærhetsbånd vinner den lengste turen. En stistump
+      // hundre meter unna er sjelden det man leter etter.
+      const band = (trip) => Math.floor((trip.distanceFromYou ?? 0) / 2000);
+      return band(a) - band(b) || b.length - a.length;
     });
 }
 

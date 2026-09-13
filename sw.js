@@ -30,6 +30,8 @@ const SHELL_FILES = [
   'src/js/panels.js',
   'src/js/search.js',
   'src/js/snap.js',
+  'src/js/trips.js',
+  'src/js/journal.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',
