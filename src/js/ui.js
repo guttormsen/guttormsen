@@ -32,7 +32,10 @@ export function toast(message, { kind = 'info', duration = 4200, action } = {}) 
         },
       }),
   ]);
-  ensureHost().append(node);
+  const host = ensureHost();
+  // Fem meldinger oppå hverandre er ingen til nytte; de eldste får gå.
+  while (host.children.length >= 3) host.firstElementChild.remove();
+  host.append(node);
   requestAnimationFrame(() => node.classList.add('is-in'));
   const remove = () => {
     node.classList.remove('is-in');

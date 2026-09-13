@@ -185,14 +185,11 @@ export function renderNavBar(navigation, summary, handlers) {
 }
 
 /** Detaljene man vil ha når man stopper og tar opp telefonen. */
-function navDetails(navigation, pois, summary) {
+function navDetails(navigation, pois) {
   const { progress, position } = navigation;
   if (!progress) return null;
 
-  const ahead = nextAhead(
-    (pois ?? []).map((poi) => ({ ...poi, along: summary.distances[closestPointOnPath(poi, summary.line).index] })),
-    progress.distanceDone,
-  );
+  const ahead = nextAhead(pois, progress.distanceDone);
   const where = formatPosition(position);
 
   return section('Underveis', [
@@ -205,8 +202,12 @@ function navDetails(navigation, pois, summary) {
     where &&
       el('div', { class: 'position' }, [
         el('span', { class: 'field__label', text: 'Posisjonen din' }),
-        el('output', { class: 'position__value', text: where.text }),
-        where.accuracy != null && el('span', { class: 'hint', text: `Nøyaktighet ±${where.accuracy} m` }),
+        el('output', { id: 'live-position', class: 'position__value', text: where.text }),
+        el('span', {
+          id: 'live-accuracy',
+          class: 'hint',
+          text: where.accuracy != null ? `Nøyaktighet ±${where.accuracy} m` : '',
+        }),
         el('p', { class: 'hint', text: 'Les disse tallene opp hvis du må ringe 113.' }),
         el('button', {
           class: 'btn',
@@ -481,7 +482,7 @@ export function renderTrip(context, handlers) {
   }
 
   return [
-    navigation.active ? navDetails(navigation, pois, summary) : null,
+    navigation.active ? navDetails(navigation, pois) : null,
     gallerySection(photos, loading.photos),
     featureSection(featuresAlongRoute(pois)),
     articleSection(article),
@@ -795,12 +796,8 @@ function poiSection(pois, summary, loading, handlers) {
     });
   }
 
-  const withDistance = pois
-    .map((poi) => {
-      const hit = closestPointOnPath(poi, summary.line);
-      return { ...poi, along: summary.distances[hit.index], offRoute: hit.distance };
-    })
-    .sort((a, b) => a.along - b.along);
+  // `along` og `offRoute` settes når severdighetene hentes.
+  const withDistance = [...pois].sort((a, b) => a.along - b.along);
 
   return section(
     'Langs ruta',
@@ -1145,7 +1142,7 @@ export function renderFooter(summary, navigation, handlers) {
   return [
     el('div', { class: 'panel__buttons' }, [
       navigation.active
-        ? el('button', { class: 'btn', type: 'button', text: '■ Avslutt turen', onclick: handlers.onFinish })
+        ? el('button', { class: 'btn', type: 'button', text: '■ Avslutt', onclick: handlers.onFinish })
         : el('button', { class: 'btn btn--primary', type: 'button', text: '▶ Start turen', onclick: handlers.onStart }),
       el('button', { class: 'btn', type: 'button', text: '✓ Gikk den', onclick: handlers.onLogTrip }),
       el('button', { class: 'btn', type: 'button', text: 'Lagre', onclick: handlers.onSave }),

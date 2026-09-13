@@ -39,6 +39,7 @@ const SHELL_FILES = [
   'src/js/photos.js',
   'src/js/features.js',
   'src/js/trailhit.js',
+  'src/js/navigate.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',

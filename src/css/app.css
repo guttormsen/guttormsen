@@ -652,6 +652,139 @@ button {
   -webkit-overflow-scrolling: touch;
 }
 
+/* ---------- Turmodus ---------- */
+
+/*
+ * Turlinja leses i fart, ofte i sollys og med kalde hender. Tallene er derfor
+ * store, tabulære og alltid på samme plass.
+ */
+.navbar {
+  flex: none;
+  padding: 2px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.navbar__numbers {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.navbar__stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.navbar__value {
+  font-size: clamp(16px, 4.6vw, 21px);
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.navbar__label {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bar--nav {
+  margin: 10px 0 8px;
+}
+
+.navbar__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.navbar__ok,
+.navbar__warn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navbar__ok {
+  color: var(--green);
+}
+
+.navbar__warn {
+  font-weight: 640;
+  color: var(--alert);
+}
+
+.navbar__waiting {
+  margin: 0;
+  padding: 8px 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.navbar__done {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.pill--tiny {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  box-shadow: none;
+  flex: none;
+}
+
+.next-up {
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  background: var(--green-soft);
+  border-radius: var(--radius-sm);
+}
+
+.position {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.position__value {
+  font-size: 19px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.position .hint {
+  margin: 0;
+}
+
+.position .btn {
+  margin-top: 6px;
+  align-self: flex-start;
+}
+
+/*
+ * Under turen trengs mer av arket synlig når det er skjøvet ned. Variabelen
+ * settes på body, slik at meldinger og kartkontroller flytter seg like mye.
+ */
+body.is-navigating {
+  --sheet-peek: 252px;
+}
+
 /* ---------- Nøkkeltall og profil ---------- */
 
 .route-header {
@@ -720,6 +853,7 @@ button {
     height: 136px;
   }
 }
+
 
 .profile__svg {
   display: block;
@@ -1910,7 +2044,8 @@ button {
 
 .toasts {
   position: fixed;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  /* Over bunnarket, så meldingene aldri dekker knappene i turlinja. */
+  bottom: calc(var(--sheet-peek) + 14px + env(safe-area-inset-bottom));
   left: 50%;
   z-index: 3000;
   display: flex;
@@ -1919,6 +2054,13 @@ button {
   width: min(420px, calc(100vw - 32px));
   pointer-events: none;
   transform: translateX(-50%);
+}
+
+/* På skrivebord ligger panelet ved siden av, så meldingene kan stå nederst. */
+@media (min-width: 900px) {
+  .toasts {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
 }
 
 .toast {

@@ -3,7 +3,7 @@
  */
 import { DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
 import { $, debounce, formatDistance, render } from './util.js';
-import { densify, pathLength, simplify } from './geo.js';
+import { closestPointOnPath, densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
 import { fetchElevations } from './api/hoydedata.js';
 import { fetchAvalancheWarning } from './api/varsom.js';
@@ -13,7 +13,7 @@ import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear, searchPhotosByNa
 import { articleMatches, attachPhotos, buildPhotoIndex, mergePhotos, photosForTrip, photosFromSearch } from './photos.js';
 import { attachFeatures } from './features.js';
 import { buildTrailIndex, findTrailAt } from './trailhit.js';
-import { progressOnRoute } from './navigate.js';
+import { formatPosition, nextAhead, progressOnRoute } from './navigate.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -159,17 +159,46 @@ function startNavigation() {
 }
 
 function stopNavigation({ log = false } = {}) {
-  const started = S.state.navigation.startedAt ? new Date(S.state.navigation.startedAt) : null;
+  const { startedAt, progress } = S.state.navigation;
+  const started = startedAt ? new Date(startedAt) : null;
+  const finished = Boolean(progress?.finished);
+  const seconds = started ? (Date.now() - started.getTime()) / 1000 : null;
+
   S.state.navigation.active = false;
   S.state.navigation.progress = null;
+  lastNavPaneKey = null;
   keepScreenAwake(false);
+  document.body.classList.remove('is-navigating');
   renderAll();
 
-  if (log && S.state.summary) {
-    const seconds = started ? (Date.now() - started.getTime()) / 1000 : S.state.summary.time.totalSeconds;
+  if (!log || !S.state.summary) return;
+
+  if (finished) {
     logCompletedTrip({ seconds, date: started?.toISOString() });
+    return;
   }
+  // Avsluttet før mål: det er brukeren som avgjør om turen skal telle.
+  toast('Turen er avsluttet.', {
+    duration: 9000,
+    action: {
+      label: 'Før i dagboka',
+      onClick: () => logCompletedTrip({ seconds, date: started?.toISOString() }),
+    },
+  });
 }
+
+/**
+ * Hva i turvisningen som avhenger av posisjonen. Endres ikke dette, er det
+ * ingen grunn til å tegne hele panelet på nytt for hvert GPS-signal – da
+ * ville lesing og rulling blitt avbrutt hvert sekund.
+ */
+function navPaneKey(progress) {
+  if (!progress) return 'ingen';
+  const ahead = nextAhead(S.state.pois ?? [], progress.distanceDone);
+  return `${progress.offRoute}|${progress.finished}|${ahead?.id ?? '-'}`;
+}
+
+let lastNavPaneKey = null;
 
 /** Regner om hvor du er på ruta hver gang posisjonen kommer inn. */
 function updateNavigation() {
@@ -185,8 +214,23 @@ function updateNavigation() {
   if (navigation.progress?.finished && !before?.finished) {
     toast('Du er fremme! 🎉', { kind: 'ok' });
   }
+
   renderNavBar();
-  renderPane('turen');
+
+  // Posisjonen må være fersk hvis noen skal lese den opp til 113.
+  const where = formatPosition(navigation.position);
+  const value = $('#live-position');
+  if (value && where) {
+    value.textContent = where.text;
+    const accuracy = $('#live-accuracy');
+    if (accuracy) accuracy.textContent = where.accuracy != null ? `Nøyaktighet ±${where.accuracy} m` : '';
+  }
+
+  const key = navPaneKey(navigation.progress);
+  if (key !== lastNavPaneKey) {
+    lastNavPaneKey = key;
+    renderPane('turen');
+  }
 }
 
 /* ---------- Tegnemodus ---------- */
@@ -446,8 +490,12 @@ function loadContext() {
   fetchPois(summary.line)
     .then((pois) => {
       if (!fresh()) return;
-      S.state.pois = pois;
-      view.drawPois(pois);
+      // Avstanden inn i turen regnes én gang her, ikke på nytt for hver tegning.
+      S.state.pois = pois.map((poi) => {
+        const hit = closestPointOnPath(poi, summary.line);
+        return { ...poi, along: summary.distances[hit.index], offRoute: hit.distance };
+      });
+      view.drawPois(S.state.pois);
     })
     .catch((error) => console.warn('Overpass feilet', error))
     .finally(() => {
@@ -837,6 +885,7 @@ function renderStats() {
 function renderNavBar() {
   const bar = $('#nav-bar');
   bar.hidden = !S.state.navigation.active;
+  document.body.classList.toggle('is-navigating', S.state.navigation.active);
   if (bar.hidden) return;
   render(bar, panels.renderNavBar(S.state.navigation, S.state.summary, handlers).flat().filter(Boolean));
 }

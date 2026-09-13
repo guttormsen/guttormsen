@@ -21,6 +21,7 @@ ved første besøk etter navnebyttet.
 
 | | |
 |---|---|
+| **Nær meg** | Én knapp henter turene rundt der du står, sortert etter avstand. |
 | **Finn tur** | Henter navngitte, merkede turer fra den nasjonale rutebasen der du er, og setter løse rutesegmenter sammen til hele turer. Filtrer på lengde, vanskegrad, rundtur, merking og rutetype – eller trykk «Overrask meg». Ett trykk på et kort laster hele turen inn ferdig planlagt. |
 | **Bilder fra turen** | Foto fra Wikimedia Commons, funnet både på turens navn og på koordinat, koblet til riktig tur og rangert etter hvor godt de passer. Kart, kommunevåpen og kjøpesentre siles bort. Fotograf og lisens står på hvert bilde. |
 | **Hva finnes langs ruta** | Badeplass, bålplass, rasteplass, utsikt, hytte, toalett, lekeplass og buss til start – hentet fra OpenStreetMap og vist som merker på turkortet. Filtrer på dem for å finne turen som passer dagen. |
@@ -37,6 +38,22 @@ ved første besøk etter navnebyttet.
 | **Snøskredvarsel** | Varsom-varselet for regionen ruta går gjennom, med faregrad og råd. |
 | **Langs ruta** | Hytter, gapahuker, topper, drikkevann, bålplasser, parkering og busstopp innenfor 700 meter. |
 | **Del og ta med** | Delbar lenke (hele turen ligger i URL-en), GPX ut og inn, lagring lokalt og offline-bruk. |
+
+### Turen underveis
+
+Trykk **Start turen**, så følger appen deg mot ruta:
+
+- Hvor langt igjen, hvor lang tid, når du er fremme, og hvor mye stigning som
+  gjenstår – store tall som er lesbare i sollys og i fart.
+- Framdriftslinje, og varsel når du kommer mer enn seksti meter fra ruta.
+- Kartet følger deg, og skjermen holdes våken så lenge nettleseren tillater det.
+- Neste hytte, rasteplass eller topp foran deg, med avstand.
+- **Posisjonen din i desimalgrader** med nøyaktighet, klar til å leses opp hvis
+  du må ringe 113.
+
+Avslutter du etter at du er fremme, føres turen i dagboka med tiden den
+faktisk tok. Avslutter du underveis, spør appen først – det er din avgjørelse
+om turen skal telle.
 
 ### Kartet er til for å se på
 
@@ -198,6 +215,7 @@ src/js/
   journal.js            turdagbok, merker og sammenligninger
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
   trailhit.js           finner hvilken sti som ligger under fingeren
+  navigate.js           hvor du er på ruta, og hva som gjenstår
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
@@ -211,8 +229,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   149 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 43 sjekker mot ekte tjenester
+test/                   160 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 50 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

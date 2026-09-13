@@ -171,6 +171,13 @@ try {
   const mapHeight = await page.evaluate(() => Math.round(document.querySelector('#map').getBoundingClientRect().height));
   check('kartet holder seg innenfor skjermen', mapHeight <= 860, `${mapHeight} px høyt`);
 
+  // Meldinger som legger seg midt i kartet fanger klikk brukeren mente for kartet.
+  const toastBottom = await page.evaluate(() => {
+    const host = document.querySelector('.toasts');
+    return host ? Math.round(window.innerHeight - host.getBoundingClientRect().bottom) : 0;
+  });
+  check('meldinger ligger nederst på skrivebord', toastBottom <= 40, `${toastBottom} px fra bunnen`);
+
   /* Høyder fyller ut kortene */
   await page.waitForFunction(() => document.querySelector('.spark') != null, null, { timeout: 90000 });
   const facts = await page.locator('.card__facts').first().textContent();
@@ -320,13 +327,46 @@ try {
   await page.screenshot({ path: join(SHOTS, 'turen.png') });
 
   /* Dagbok */
-  await page.click('.btn:has-text("Jeg gikk denne")');
+  await page.click('.btn:has-text("Gikk den")');
   await page.waitForTimeout(400);
   check('turen føres i dagboka', (await page.locator('.tab[data-tab="dagbok"].is-active').count()) === 1);
   const totals = await page.locator('.totals .stat__value').allTextContents();
   check('dagboka summerer turen', totals[0] === '1', totals.join(' / '));
   check('første merke er oppnådd', (await page.locator('.badge.is-earned').count()) >= 1);
   await page.screenshot({ path: join(SHOTS, 'dagbok.png') });
+
+  /* Turmodus med simulert posisjon */
+  await page.evaluate(() => window.lykkeligtur.selectTab('turen'));
+  await page.evaluate(() => {
+    const line = window.lykkeligtur.state.summary.line;
+    window.lykkeligtur.state.navigation.position = { ...line[Math.floor(line.length / 3)], accuracy: 8 };
+    window.lykkeligtur.startNavigation();
+    window.lykkeligtur.updateNavigation();
+  });
+  await page.waitForTimeout(500);
+  check('turlinja vises når turen er startet', await page.locator('#nav-bar').isVisible());
+  const navValues = await page.locator('.navbar__value').allTextContents();
+  check('turlinja viser hvor mye som gjenstår', navValues.length === 4 && navValues.every(Boolean), navValues.join(' | '));
+  const onRoute = await page.locator('.navbar__ok').textContent();
+  check('framdriften regnes ut', /% gått/.test(onRoute ?? ''), (onRoute ?? '').trim());
+
+  await page.evaluate(() => {
+    // Flytt posisjonen langt vekk fra ruta.
+    const p = window.lykkeligtur.state.navigation.position;
+    window.lykkeligtur.state.navigation.position = { lat: p.lat + 0.01, lon: p.lon, accuracy: 8 };
+    window.lykkeligtur.updateNavigation();
+  });
+  await page.waitForTimeout(300);
+  check('varsler når man er utenfor ruta', (await page.locator('.navbar__warn').count()) === 1);
+
+  await page.locator('.panes').evaluate((node) => { node.scrollTop = 0; });
+  const coords = await page.locator('.position__value').textContent();
+  check('posisjonen vises til nødetatene', /^\d+\.\d{5}, \d+\.\d{5}$/.test((coords ?? '').trim()), (coords ?? '').trim());
+  await page.screenshot({ path: join(SHOTS, 'turmodus.png') });
+
+  await page.evaluate(() => window.lykkeligtur.stopNavigation());
+  await page.waitForTimeout(300);
+  check('turmodus kan avsluttes', await page.locator('#nav-bar').isHidden());
 
   /* Kartlag */
   await page.click('#btn-layers');
