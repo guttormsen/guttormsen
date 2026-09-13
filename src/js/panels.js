@@ -7,7 +7,8 @@ import { DANGER_LEVELS } from './api/varsom.js';
 import { POI_KINDS } from './api/overpass.js';
 import { describeSymbol, describeWind } from './api/met.js';
 import { closestPointOnPath, compassPoint } from './geo.js';
-import { arrivalTime, formatPosition, nextAhead } from './navigate.js';
+import { arrivalTime, formatPosition, headingAhead, nextAhead } from './navigate.js';
+import { describeMode, directionsUrl } from './api/entur.js';
 import { daylightCheck } from './weather.js';
 import { GRADES, LENGTH_BUCKETS, SPECIAL_TYPES, hasActiveFilters } from './trips.js';
 import { FEATURES, FEATURE_LIST, topFeatures } from './features.js';
@@ -118,6 +119,58 @@ export function renderStats(summary, loading) {
   return nodes;
 }
 
+/* ---------- Forhåndsvisning i kartet ---------- */
+
+/**
+ * Kortet som legger seg over kartet når man trykker på en sti.
+ *
+ * Poenget er at man skal kunne se på en tur uten at panelet spretter opp og
+ * dekker kartet man nettopp trykket i.
+ */
+export function renderPreview(trip, handlers) {
+  if (!trip) return [];
+  const facts = [
+    formatDistance(trip.length),
+    trip.ascent != null ? `${formatElevation(trip.ascent)} opp` : null,
+    trip.seconds != null ? formatDuration(trip.seconds) : null,
+  ].filter(Boolean);
+
+  const { shown } = topFeatures(trip.features ?? [], 3);
+
+  return [
+    el('div', { class: 'preview__head' }, [
+      el('strong', { class: 'preview__name', text: trip.name }),
+      el('button', {
+        class: 'icon-btn icon-btn--tiny',
+        type: 'button',
+        title: 'Lukk',
+        html: '<span aria-hidden="true">✕</span>',
+        onclick: handlers.onClosePreview,
+      }),
+    ]),
+    el('div', { class: 'preview__facts' }, [
+      el('span', { class: 'card__grade', style: `--dot:${trip.grade.color}`, text: trip.grade.label }),
+      el('strong', { text: facts.join(' · ') }),
+      trip.ascent == null && el('span', { class: 'card__pending', text: 'henter høyder …' }),
+    ]),
+    shown.length > 0 &&
+      el('div', { class: 'card__tags' },
+        shown.map((id) =>
+          el('span', {
+            class: `tag tag--feature${id === 'hc' ? ' tag--hc' : ''}`,
+            text: `${FEATURES[id].icon} ${FEATURES[id].label}`,
+          }),
+        ),
+      ),
+    el('button', {
+      class: 'btn btn--primary preview__pick',
+      type: 'button',
+      text: 'Velg denne turen',
+      onclick: () => handlers.onPickTrip(trip),
+    }),
+  ];
+}
+
 /* ---------- Turmodus ---------- */
 
 /**
@@ -126,6 +179,7 @@ export function renderStats(summary, loading) {
  */
 export function renderNavBar(navigation, summary, handlers) {
   const { progress } = navigation;
+  const heading = progress ? headingAhead(summary, progress.index, navigation.position) : null;
   if (!progress) {
     return [el('p', { class: 'navbar__waiting', text: 'Venter på posisjon …' })];
   }
@@ -172,7 +226,12 @@ export function renderNavBar(navigation, summary, handlers) {
             class: 'navbar__warn',
             text: `⚠ ${formatDistance(progress.offRouteDistance)} fra ruta`,
           })
-        : el('span', { class: 'navbar__ok', text: `På ruta · ${Math.round(progress.fraction * 100)} % gått` }),
+        : el('span', {
+            class: 'navbar__ok',
+            text: heading
+              ? `Følg ruta mot ${heading.compass} · ${Math.round(progress.fraction * 100)} % gått`
+              : `På ruta · ${Math.round(progress.fraction * 100)} % gått`,
+          }),
       el('button', {
         class: `pill pill--tiny${navigation.follow ? ' is-on' : ''}`,
         type: 'button',
@@ -466,7 +525,7 @@ function localInputValue(date) {
 }
 
 export function renderTrip(context, handlers) {
-  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist, navigation } =
+  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist, navigation, journeys } =
     context;
   handlersRef = handlers;
 
@@ -487,6 +546,7 @@ export function renderTrip(context, handlers) {
     featureSection(featuresAlongRoute(pois)),
     articleSection(article),
     quickSettings(trip, startTime, handlers),
+    gettingThereSection(summary, journeys, loading.journeys, handlers),
     weatherSection(weather, sun, loading.weather, startTime),
     safetySection(summary, sun, avalanche, startTime, checklist, handlers),
     poiSection(pois, summary, loading.pois, handlers),
@@ -551,6 +611,66 @@ function articleSection(article) {
       text: `Les mer om ${article.title} på Wikipedia`,
     }),
   ]);
+}
+
+/**
+ * Hvordan komme seg til startpunktet. Uten bil er dette ofte det som avgjør
+ * om turen blir noe av.
+ */
+function gettingThereSection(summary, journeys, loading, handlers) {
+  const start = summary.line[0];
+  const body = [];
+
+  if (loading) {
+    body.push(el('p', { class: 'hint', text: 'Ser etter kollektivforbindelser …' }));
+  } else if (journeys?.length) {
+    body.push(
+      el('ul', { class: 'journeys' },
+        journeys.slice(0, 3).map((journey) =>
+          el('li', { class: 'journey' }, [
+            el('span', { class: 'journey__when' }, [
+              el('strong', { text: formatClock(journey.start) }),
+              el('span', { text: `${Math.round(journey.duration / 60)} min` }),
+            ]),
+            el('span', { class: 'journey__legs' },
+              journey.legs.map((leg) =>
+                el('span', {
+                  class: `leg leg--${leg.mode}`,
+                  title: [describeMode(leg.mode).label, leg.lineName, leg.from].filter(Boolean).join(' · '),
+                  text: `${describeMode(leg.mode).icon}${leg.line ? ` ${leg.line}` : ''}`,
+                }),
+              ),
+            ),
+            el('span', { class: 'journey__walk', text: `${formatDistance(journey.walkDistance)} gange` }),
+          ]),
+        ),
+      ),
+      el('p', { class: 'hint' }, [
+        'Rutedata fra ',
+        el('a', { href: 'https://entur.no/', target: '_blank', rel: 'noopener', text: 'Entur' }),
+        '. Sjekk avgangen før du drar.',
+      ]),
+    );
+  } else if (journeys) {
+    body.push(el('p', { class: 'hint', text: 'Fant ingen kollektivforbindelse hit akkurat nå.' }));
+  } else {
+    body.push(
+      el('p', { class: 'hint', text: 'Slå på posisjon, så finner jeg kollektivforbindelser til startpunktet.' }),
+      el('button', { class: 'btn', type: 'button', text: '📍 Finn vei hit', onclick: handlers.onFindWayThere }),
+    );
+  }
+
+  body.push(
+    el('a', {
+      class: 'btn btn--link',
+      href: directionsUrl(start),
+      target: '_blank',
+      rel: 'noopener',
+      text: '🚗 Veibeskrivelse til startpunktet',
+    }),
+  );
+
+  return section('Kom deg til start', body, { collapsible: true, open: false });
 }
 
 function quickSettings(trip, startTime, handlers) {

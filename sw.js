@@ -52,6 +52,7 @@ const SHELL_FILES = [
   'src/js/api/overpass.js',
   'src/js/api/turrutebasen.js',
   'src/js/api/commons.js',
+  'src/js/api/entur.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'icons/icon.svg',
@@ -68,6 +69,7 @@ const DATA_HOSTS = [
   'api01.nve.no',
   'commons.wikimedia.org',
   'no.wikipedia.org',
+  'api.entur.io',
 ];
 
 self.addEventListener('install', (event) => {

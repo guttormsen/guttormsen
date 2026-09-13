@@ -273,11 +273,22 @@ try {
     check('stien under pekeren får navn', /trykk for å velge/.test(label ?? ''), (label ?? '').slice(0, 46));
 
     await page.mouse.click(mapBox.x + trailPick.x, mapBox.y + trailPick.y);
+    await page.waitForSelector('#trail-preview .preview__name', { timeout: 20000 });
+    const previewName = await page.locator('.preview__name').textContent();
+    check('trykk på stien viser den i kartet', previewName === trailPick.name, previewName ?? '');
+    check(
+      'panelet spretter ikke opp av seg selv',
+      (await page.evaluate(() => window.lykkeligtur.state.trip.waypoints.length)) === 0 &&
+        (await page.locator('.tab[data-tab="finn"].is-active').count()) === 1,
+    );
+
+    await page.click('.preview__pick');
     await page.waitForFunction(() => window.lykkeligtur.state.trip.waypoints.length === 2, null, { timeout: 20000 });
     const chosen = await page.evaluate(() => window.lykkeligtur.state.trip.name);
-    check('trykk på stien velger hele turen', chosen === trailPick.name, chosen);
+    check('velg denne laster hele turen', chosen === trailPick.name, chosen);
+    check('startknappen dukker opp i kartet', await page.locator('#btn-start').isVisible());
   } else {
-    check('trykk på stien velger hele turen', false, 'fant ingen sti innenfor kartutsnittet');
+    check('trykk på stien viser den i kartet', false, 'fant ingen sti innenfor kartutsnittet');
   }
 
   /* Velg en tur fra kortet – den erstatter turen som allerede ligger inne */
@@ -335,8 +346,25 @@ try {
   check('første merke er oppnådd', (await page.locator('.badge.is-earned').count()) >= 1);
   await page.screenshot({ path: join(SHOTS, 'dagbok.png') });
 
+  /* Kollektivt til startpunktet */
+  const journeys = await page.evaluate(async () => {
+    const { planJourney } = await import('./src/js/api/entur.js');
+    const start = window.lykkeligtur.state.summary.line[0];
+    const from = { lat: start.lat - 0.03, lon: start.lon - 0.03 };
+    try {
+      return (await planJourney(from, start)).length;
+    } catch {
+      return -1;
+    }
+  });
+  if (journeys >= 0) {
+    check('kollektivreiser hentes fra Entur', journeys > 0, `${journeys} alternativer`);
+  } else {
+    skip('kollektivreiser hentes fra Entur', 'Entur svarte ikke');
+  }
+
   /* Turmodus med simulert posisjon */
-  await page.evaluate(() => window.lykkeligtur.selectTab('turen'));
+  await page.evaluate(() => window.lykkeligtur.selectTab('turen', { open: true }));
   await page.evaluate(() => {
     const line = window.lykkeligtur.state.summary.line;
     window.lykkeligtur.state.navigation.position = { ...line[Math.floor(line.length / 3)], accuracy: 8 };

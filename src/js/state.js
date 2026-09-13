@@ -41,7 +41,7 @@ export const state = {
   /** Høyder for gjeldende prøvelinje, gjenbrukes når bare innstillinger endres. */
   elevationCache: null,
   /** Statusflagg for det som lastes i bakgrunnen. */
-  loading: { elevation: false, weather: false, pois: false, snap: false, photos: false },
+  loading: { elevation: false, weather: false, pois: false, snap: false, photos: false, journeys: false },
   weather: null,
   sun: null,
   avalanche: null,
@@ -64,8 +64,10 @@ export const state = {
   /** Bilder og stedsbeskrivelse for turen som er valgt. */
   photos: [],
   article: null,
-  /** Turforslaget som vises i kartet akkurat nå. */
+  /** Turforslaget som vises i kartet akkurat nå, før man har valgt det. */
   preview: null,
+  /** Kollektivreiser til startpunktet. */
+  journeys: null,
 
   /** Turmodus: posisjonen din målt mot ruta. */
   navigation: {

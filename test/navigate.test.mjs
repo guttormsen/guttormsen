@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as navigateModule from '../src/js/navigate.js';
 import { OFF_ROUTE_M, arrivalTime, formatPosition, nextAhead, progressOnRoute } from '../src/js/navigate.js';
 import { summarise } from '../src/js/route.js';
 
@@ -104,4 +105,30 @@ test('formatPosition gir tall som kan leses opp til 113', () => {
 test('formatPosition takler manglende nøyaktighet og posisjon', () => {
   assert.equal(formatPosition(null), null);
   assert.equal(formatPosition({ lat: 60, lon: 5 }).accuracy, null);
+});
+
+/* ---------- Retning og feil vei ---------- */
+
+test('headingAhead peker dit ruta går videre', () => {
+  const { headingAhead } = navigateModule;
+  const start = summary.line[0];
+  const heading = headingAhead(summary, 0, start);
+  // Ruta går rett østover.
+  assert.equal(heading.compass, 'Ø');
+  assert.ok(heading.distance >= 150 && heading.distance < 300, `${heading.distance} m fram`);
+});
+
+test('headingAhead gir ingenting helt på slutten', () => {
+  const { headingAhead } = navigateModule;
+  assert.equal(headingAhead(summary, summary.line.length - 1, summary.line.at(-1)), null);
+  assert.equal(headingAhead(null, 0, { lat: 60, lon: 5 }), null);
+});
+
+test('looksReversed kjenner igjen at man står ved målet', () => {
+  const { looksReversed } = navigateModule;
+  assert.equal(looksReversed(summary, summary.line.at(-1)), true);
+  assert.equal(looksReversed(summary, summary.line[0]), false);
+  // Midt på ruta er det ingen grunn til å spørre.
+  assert.equal(looksReversed(summary, summary.line[Math.floor(summary.line.length / 2)]), false);
+  assert.equal(looksReversed(null, { lat: 60, lon: 5 }), false);
 });

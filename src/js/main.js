@@ -13,7 +13,8 @@ import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear, searchPhotosByNa
 import { articleMatches, attachPhotos, buildPhotoIndex, mergePhotos, photosForTrip, photosFromSearch } from './photos.js';
 import { attachFeatures } from './features.js';
 import { buildTrailIndex, findTrailAt } from './trailhit.js';
-import { formatPosition, nextAhead, progressOnRoute } from './navigate.js';
+import { formatPosition, looksReversed, nextAhead, progressOnRoute } from './navigate.js';
+import { planJourney } from './api/entur.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -62,11 +63,18 @@ const TAP_TOLERANCE_PX = 16;
 const HOVER_TOLERANCE_PX = 12;
 
 const view = createMap($('#map'), {
-  /** Trykk utenfor tegnemodus: velg stien man traff, ellers gjør ingenting. */
+  /**
+   * Trykk utenfor tegnemodus viser stien man traff – uten å bytte fane eller
+   * dra opp panelet. Man skal kunne se på flere turer etter hverandre.
+   */
   onMapPicked: (point, metersPerPixel) => {
     const hit = findTrailAt(trailIndex, point, metersPerPixel * TAP_TOLERANCE_PX);
     if (hit) {
-      pickTrail(hit.trip);
+      showPreview(hit.trip);
+      return;
+    }
+    if (S.state.preview) {
+      closePreview();
       return;
     }
     // Ingen sti der. Å slippe en markør her ville bare vært i veien.
@@ -97,6 +105,11 @@ const profile = createProfile($('#profile'), { onHover: (point) => view.showHove
 /** Navnet på stien under pekeren, vist nederst i kartet. */
 function showTrailLabel(trip) {
   const label = $('#trail-label');
+  // Forhåndsvisningen står på samme plass; da er navnet allerede synlig.
+  if (S.state.preview) {
+    label.hidden = true;
+    return;
+  }
   if (view.isDrawing()) {
     label.hidden = false;
     label.textContent = 'Trykk i kartet for å legge til punkter';
@@ -155,7 +168,15 @@ function startNavigation() {
   ensurePositionWatch();
   S.setStartTime(new Date());
   renderAll();
-  toast('God tur! Jeg følger med på hvor langt du har igjen.', { kind: 'ok' });
+
+  if (myPosition && looksReversed(S.state.summary, myPosition)) {
+    toast('Du står nærmest målet. Går du ruta motsatt vei?', {
+      duration: 12000,
+      action: { label: 'Snu ruta', onClick: () => S.reverseTrip() },
+    });
+  } else {
+    toast('God tur! Jeg følger med på hvor langt du har igjen.', { kind: 'ok' });
+  }
 }
 
 function stopNavigation({ log = false } = {}) {
@@ -251,17 +272,57 @@ function setDrawing(on) {
   }
 }
 
+/* ---------- Forhåndsvisning ---------- */
+
+let previewRun = 0;
+
+/** Viser stien man trykket på, uten å forstyrre resten av grensesnittet. */
+function showPreview(trip) {
+  S.state.preview = trip;
+  view.showSuggestion(trip.points);
+  view.fitRoute(trip.points, { paddingBottomRight: [0, 240] });
+  renderPreview();
+  if (trip.ascent == null) loadPreviewElevation(trip);
+}
+
+function closePreview() {
+  S.state.preview = null;
+  previewRun++;
+  view.showSuggestion(null);
+  renderPreview();
+}
+
+/** Henter en grov høydeprofil for turen man ser på, så tid og stigning vises. */
+async function loadPreviewElevation(trip) {
+  const run = ++previewRun;
+  try {
+    const sample = sampleForCard(trip.points);
+    const elevations = await fetchElevations(sample);
+    if (run !== previewRun || S.state.preview?.id !== trip.id) return;
+    const enriched = enrichTrip(trip, sample, elevations, S.state.trip.options);
+    S.state.preview = enriched;
+    // Kortet i lista skal vise det samme.
+    S.state.discovery.all = S.state.discovery.all.map((t) => (t.id === enriched.id ? enriched : t));
+    trailIndex = buildTrailIndex(S.state.discovery.all);
+    renderPreview();
+  } catch {
+    // Uten høyder viser kortet bare lengden. Det er godt nok til å velge på.
+  }
+}
+
 /** Laster en tur fra kartet eller fra et turkort. */
 function pickTrail(trip) {
   setDrawing(false);
   view.highlightTrail(null);
   view.showSuggestion(null);
   hoveredTrail = null;
+  S.state.preview = null;
+  renderPreview();
   showTrailLabel(null);
   S.setTrip(S.tripFromSuggestion(trip), 'load');
   view.fitRoute(trip.points);
-  selectTab('turen');
-  toast(`«${trip.name}» er lagt inn. Juster gjerne start og fart.`, { kind: 'ok' });
+  // Fanen bytter innhold, men panelet dras ikke opp over kartet av seg selv.
+  selectTab('turen', { open: false });
 }
 
 createSearch(
@@ -397,6 +458,8 @@ async function recompute(reason) {
     }
     if (id !== generation) return;
   }
+
+  if (geometryChanged) S.state.journeys = null;
 
   const { line, boundaries } = routeLineWithBoundaries();
   drawnBoundaries = boundaries;
@@ -537,6 +600,40 @@ async function loadPhotosAndArticle(summary, id) {
   } finally {
     if (id === generation) {
       S.state.loading.photos = false;
+      renderPane('turen');
+    }
+  }
+}
+
+/**
+ * Finner kollektivforbindelser fra der du er til startpunktet.
+ * Uten bil er det ofte dette som avgjør om turen blir noe av.
+ */
+async function findWayToStart() {
+  const summary = S.state.summary;
+  if (!summary) return;
+
+  if (!myPosition) {
+    toast('Henter posisjonen din …');
+    pendingNearMe = () => {
+      pendingNearMe = null;
+      findWayToStart();
+    };
+    ensurePositionWatch();
+    return;
+  }
+
+  const id = generation;
+  S.state.loading.journeys = true;
+  renderPane('turen');
+  try {
+    S.state.journeys = await planJourney(myPosition, summary.line[0], { when: S.startDate() });
+  } catch (error) {
+    console.warn('Entur feilet', error);
+    S.state.journeys = [];
+  } finally {
+    if (id === generation) {
+      S.state.loading.journeys = false;
       renderPane('turen');
     }
   }
@@ -742,12 +839,14 @@ const handlers = {
     view.showSuggestion(trip?.points ?? null);
   },
   onPickTrip: (trip) => pickTrail(trip),
+  onClosePreview: () => closePreview(),
+  onFindWayThere: () => findWayToStart(),
   onSurprise: () => {
     const trip = surpriseMe(S.state.discovery.visible);
     if (trip) handlers.onPickTrip(trip);
   },
   onDrawOwn: () => {
-    selectTab('turen');
+    selectTab('turen', { open: true });
     setDrawing(true);
   },
   onGoDiscover: () => selectTab('finn'),
@@ -790,7 +889,7 @@ const handlers = {
   },
   onOpenTrip: (saved) => {
     S.setTrip({ ...saved }, 'load');
-    selectTab('turen');
+    selectTab('turen', { open: true });
     toast(`Åpnet «${saved.name}».`, { kind: 'ok' });
   },
   onDeleteTrip: (saved) => {
@@ -837,7 +936,7 @@ function logCompletedTrip({ seconds, date } = {}) {
     date: date ?? S.state.trip.startTime,
   });
   toast(`«${entry.name}» er ført i dagboka. Godt gått!`, { kind: 'ok' });
-  selectTab('dagbok');
+  selectTab('dagbok', { open: true });
 }
 
 const isLoop = (summary) => {
@@ -864,6 +963,7 @@ const PANES = {
         article: S.state.article,
         loading: S.state.loading,
         navigation: S.state.navigation,
+        journeys: S.state.journeys,
         checklist,
       },
       handlers,
@@ -880,6 +980,13 @@ function renderPane(name) {
 
 function renderStats() {
   render($('#stats'), panels.renderStats(S.state.summary, S.state.loading).filter(Boolean));
+}
+
+function renderPreview() {
+  const box = $('#trail-preview');
+  box.hidden = !S.state.preview;
+  if (box.hidden) return;
+  render(box, panels.renderPreview(S.state.preview, handlers).flat().filter(Boolean));
 }
 
 function renderNavBar() {
@@ -902,6 +1009,9 @@ function renderAll() {
 
   if (hasRoute) renderStats();
   renderNavBar();
+  renderPreview();
+  // «Start turen» hører hjemme i kartet, der man ser hvor man skal.
+  $('#btn-start').hidden = !hasRoute || S.state.navigation.active || Boolean(S.state.preview);
   render(
     $('#panel-footer'),
     panels.renderFooter(S.state.summary, S.state.navigation, handlers).flat().filter(Boolean),
@@ -910,7 +1020,7 @@ function renderAll() {
   updateSearchHere();
 }
 
-function selectTab(name) {
+function selectTab(name, { open = false } = {}) {
   activeTab = name;
   for (const button of document.querySelectorAll('.tab')) {
     const selected = button.dataset.tab === name;
@@ -918,13 +1028,14 @@ function selectTab(name) {
     button.setAttribute('aria-selected', String(selected));
   }
   for (const pane of document.querySelectorAll('.pane')) pane.hidden = pane.dataset.pane !== name;
-  if (name !== 'finn') view.showSuggestion(null);
-  openSheet(true);
+  if (name !== 'finn' && !S.state.preview) view.showSuggestion(null);
+  if (open) openSheet(true);
   renderAll();
 }
 
 for (const button of document.querySelectorAll('.tab')) {
-  button.addEventListener('click', () => selectTab(button.dataset.tab));
+  // Trykker man selv på en fane, vil man se innholdet – da åpnes arket.
+  button.addEventListener('click', () => selectTab(button.dataset.tab, { open: true }));
 }
 
 /* ---------- Bunnark ---------- */
@@ -966,6 +1077,8 @@ document.addEventListener('click', (event) => {
 $('#btn-search-here').addEventListener('click', () => loadDiscovery());
 
 $('#btn-draw').addEventListener('click', () => setDrawing(!view.isDrawing()));
+
+$('#btn-start').addEventListener('click', () => startNavigation());
 
 $('#btn-undo').addEventListener('click', () => {
   const last = S.state.trip.waypoints.at(-1);
@@ -1124,7 +1237,7 @@ async function importGpx(event) {
       legs: [{ points, snapped: true, pending: false }],
       options: S.state.trip.options,
     });
-    selectTab('turen');
+    selectTab('turen', { open: true });
     view.fitRoute(points);
     toast(`Leste inn ${points.length} punkter fra ${file.name}.`, { kind: 'ok' });
   } catch (error) {
@@ -1190,7 +1303,7 @@ function boot() {
       legs: waypoints.slice(1).map((point, i) => ({ points: [waypoints[i], point], snapped: false, pending: true })),
       options: { ...DEFAULT_OPTIONS, ...S.state.trip.options, ...clean(shared.options) },
     });
-    selectTab('turen');
+    selectTab('turen', { open: false });
     setTimeout(() => view.fitRoute(S.routeLine()), 200);
   } else {
     selectTab('finn');

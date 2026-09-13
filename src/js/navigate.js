@@ -7,7 +7,7 @@
  *
  * Rene funksjoner – ingen DOM, ingen nettverk.
  */
-import { closestPointOnPath, haversine } from './geo.js';
+import { bearing, closestPointOnPath, compassPoint, haversine } from './geo.js';
 
 /** Lenger enn dette fra ruta regnes du som utenfor den. */
 export const OFF_ROUTE_M = 60;
@@ -65,6 +65,47 @@ export function progressOnRoute(summary, position) {
     offRouteDistance: hit.distance,
     finished,
   };
+}
+
+/**
+ * Hvilken vei du skal gå videre.
+ *
+ * Retningen måles til et punkt et stykke lenger fram på ruta, ikke til det
+ * aller neste. Rutepunktene ligger få meter fra hverandre, og da spriker
+ * retningen med hver liten sving.
+ *
+ * @param {object} summary
+ * @param {number} index punktet du er ved
+ * @param {{lat:number, lon:number}} position
+ * @param {number} [aheadMeters]
+ * @returns {{degrees:number, compass:string, distance:number}|null}
+ */
+export function headingAhead(summary, index, position, aheadMeters = 150) {
+  if (!summary || index == null) return null;
+  const target = summary.distances[index] + aheadMeters;
+  let ahead = summary.line.length - 1;
+  for (let i = index + 1; i < summary.line.length; i++) {
+    if (summary.distances[i] >= target) {
+      ahead = i;
+      break;
+    }
+  }
+  if (ahead <= index) return null;
+  const to = summary.line[ahead];
+  const degrees = bearing(position, to);
+  return { degrees, compass: compassPoint(degrees), distance: summary.distances[ahead] - summary.distances[index] };
+}
+
+/**
+ * Står du nærmere målet enn starten, går du sannsynligvis ruta motsatt vei.
+ * @returns {boolean}
+ */
+export function looksReversed(summary, position) {
+  if (!summary || summary.line.length < 2 || !position) return false;
+  const toStart = haversine(position, summary.line[0]);
+  const toEnd = haversine(position, summary.line.at(-1));
+  // Krever en tydelig forskjell, ellers spør vi folk midt på ruta.
+  return toEnd < toStart * 0.5 && toStart > 300;
 }
 
 /** Klokkeslettet du er beregnet å være fremme. */

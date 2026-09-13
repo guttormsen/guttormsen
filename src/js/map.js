@@ -261,10 +261,11 @@ export function createMap(container, handlers = {}) {
         return;
       }
       if (points.length < 2) return;
-      map.fitBounds(
-        L.latLngBounds(points.map((p) => [p.lat, p.lon])),
-        { padding: [50, 50], maxZoom: 15, ...options },
-      );
+      map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lon])), {
+        padding: [50, 50],
+        maxZoom: 15,
+        ...options,
+      });
     },
 
     flyTo(point, zoom = 14) {

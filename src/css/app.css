@@ -366,6 +366,154 @@ button {
   }
 }
 
+/* ---------- Forhåndsvisning over kartet ---------- */
+
+.preview {
+  position: absolute;
+  right: 12px;
+  bottom: calc(var(--sheet-peek) + 12px);
+  left: 12px;
+  z-index: 720;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 420px;
+  padding: 13px 14px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+@media (min-width: 900px) {
+  .preview {
+    right: auto;
+    bottom: 16px;
+    left: 16px;
+    margin: 0;
+  }
+}
+
+.preview__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.preview__name {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.preview__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview__pick {
+  width: 100%;
+}
+
+/* «Start turen» ligger i kartet, der man ser hvor man skal. */
+.pill--start {
+  position: absolute;
+  bottom: calc(var(--sheet-peek) + 12px);
+  left: 50%;
+  z-index: 710;
+  min-height: 46px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 620;
+  color: #fff;
+  background: var(--green);
+  border-color: transparent;
+  transform: translateX(-50%);
+}
+
+@media (min-width: 900px) {
+  .pill--start {
+    bottom: 16px;
+  }
+}
+
+/* ---------- Kom deg til start ---------- */
+
+.journeys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.journey {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 11px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  grid-template-columns: auto 1fr auto;
+}
+
+.journey__when {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+}
+
+.journey__when span {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.journey__legs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.leg {
+  padding: 2px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.leg--bus,
+.leg--tram,
+.leg--metro {
+  color: var(--sky);
+  border-color: var(--sky);
+}
+
+.leg--rail,
+.leg--water {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.journey__walk {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.btn--link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
 /* Kartet får pekefinger når en sti kan velges. */
 .map.is-pointing {
   cursor: pointer;

@@ -39,14 +39,25 @@ ved første besøk etter navnebyttet.
 | **Langs ruta** | Hytter, gapahuker, topper, drikkevann, bålplasser, parkering og busstopp innenfor 700 meter. |
 | **Del og ta med** | Delbar lenke (hele turen ligger i URL-en), GPX ut og inn, lagring lokalt og offline-bruk. |
 
+### Kom deg til start
+
+Uten bil er det ofte turen *til* turen som avgjør om det blir noe av. Appen
+henter kollektivforbindelser fra der du står til startpunktet – avgangstid,
+linjenummer og hvor langt du må gå – og har en lenke som åpner veibeskrivelse
+i telefonens eget kartprogram.
+
 ### Turen underveis
 
-Trykk **Start turen**, så følger appen deg mot ruta:
+**Start turen** ligger som en knapp i selve kartet, ikke nede i panelet.
+Så følger appen deg mot ruta:
 
 - Hvor langt igjen, hvor lang tid, når du er fremme, og hvor mye stigning som
   gjenstår – store tall som er lesbare i sollys og i fart.
 - Framdriftslinje, og varsel når du kommer mer enn seksti meter fra ruta.
 - Kartet følger deg, og skjermen holdes våken så lenge nettleseren tillater det.
+- Hvilken vei du skal videre: «Følg ruta mot SØ», målt til et punkt et stykke
+  fram, ikke til det aller neste – ellers spriker retningen med hver sving.
+- Står du nærmest målet når du starter, spør appen om du går ruta motsatt vei.
 - Neste hytte, rasteplass eller topp foran deg, med avstand.
 - **Posisjonen din i desimalgrader** med nøyaktighet, klar til å leses opp hvis
   du må ringe 113.
@@ -62,9 +73,14 @@ man drar og zoomer, og da skal det ikke dukke opp en markør man må rydde bort.
 
 | Situasjon | Hva som skjer |
 |---|---|
-| Trykk på en merket sti | Hele turen velges – navn, høydeprofil, vær og bilder |
+| Trykk på en merket sti | Den markeres, og et lite kort over kartet viser navn, lengde, stigning og tid |
+| «Velg denne turen» på kortet | Turen lastes med høydeprofil, vær og bilder |
 | Trykk i terrenget ellers | Ingenting, men appen tipser om «Tegn selv» |
 | Tegnemodus på (knapp i kartet) | Trykk setter punkter, punktene kan dras og fjernes |
+
+Panelet spretter aldri opp av seg selv. Det bytter innhold når du velger en tur,
+men det er du som drar det opp når du vil lese mer. Da kan du se på flere turer
+etter hverandre uten at kartet blir dekket hver gang.
 
 Stien under pekeren markeres og får navnet sitt vist, så det er synlig at den
 kan trykkes på. Turene lastes av seg selv første gang kartet står stille på
@@ -112,6 +128,7 @@ Alt er åpne data. Ingen API-nøkler kreves.
 | [OpenStreetMap via Overpass](https://overpass-api.de/) | Hytter, topper, badeplasser, rasteplasser, toaletter, busstopp og stier der Turrutebasen mangler | ODbL |
 | [Wikimedia Commons](https://commons.wikimedia.org/) | Bilder fra turområdene | Per bilde – vises ved hvert foto |
 | [Wikipedia (bokmål)](https://no.wikipedia.org/) | Korte stedsbeskrivelser | CC BY-SA 4.0 |
+| [Entur Journey Planner](https://developer.entur.org/) | Kollektivforbindelser til startpunktet | NLOD |
 
 ### Hvorfor ikke ut.no?
 
@@ -215,7 +232,7 @@ src/js/
   journal.js            turdagbok, merker og sammenligninger
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
   trailhit.js           finner hvilken sti som ligger under fingeren
-  navigate.js           hvor du er på ruta, og hva som gjenstår
+  navigate.js           hvor du er på ruta, hva som gjenstår, og hvilken vei
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
@@ -229,8 +246,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   160 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 50 sjekker mot ekte tjenester
+test/                   163 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 53 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen
