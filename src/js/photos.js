@@ -142,6 +142,58 @@ export function photosForTrip(index, trip, { radius = PHOTO_RADIUS_M, limit = 6,
 }
 
 /**
+ * Vurderer treff fra et navnesøk, der bildet ofte mangler koordinat.
+ *
+ * Søket er upresist – «Preikestolen» kan gi «Panorama of Lysefjord». Derfor
+ * kreves et ekte navnetreff i tittel eller beskrivelse, og ligger bildet
+ * langt fra ruta forkastes det selv om navnet stemmer.
+ *
+ * @param {Array<object>} candidates fra `searchPhotosByName`
+ * @param {{name: string, points: Array<{lat:number,lon:number}>}} trip
+ * @param {{ maxDistance?: number, limit?: number }} [options]
+ */
+export function photosFromSearch(candidates, trip, { maxDistance = 15000, limit = 6 } = {}) {
+  const words = significantWords(trip.name);
+  if (!words.length) return [];
+  const middle = trip.points?.[Math.floor((trip.points?.length ?? 1) / 2)];
+
+  return candidates
+    .map((photo) => {
+      if (!isLikelyPhoto(photo.title)) return null;
+      const haystack = `${photo.title} ${photo.description ?? ''}`.toLowerCase();
+      const hits = words.filter((word) => haystack.includes(word)).length;
+      if (!hits) return null;
+
+      // Har bildet koordinat, må det ligge i samme landskap som turen.
+      let distance = null;
+      if (middle && Number.isFinite(photo.lat) && Number.isFinite(photo.lon)) {
+        distance = haversine(middle, photo);
+        if (distance > maxDistance) return null;
+      }
+      const shape = photo.width && photo.height && photo.width >= photo.height ? 1 : 0.85;
+      // Et navnetreff med bekreftet posisjon er det beste vi kan få.
+      const confirmed = distance != null ? 60 : 0;
+      return { ...photo, distance, score: (hits * 120 + confirmed) * shape };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+/** Slår sammen to bildelister uten duplikater, best først. */
+export function mergePhotos(...lists) {
+  const seen = new Set();
+  return lists
+    .flat()
+    .filter((photo) => {
+      if (!photo || seen.has(photo.id)) return false;
+      seen.add(photo.id);
+      return true;
+    })
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+}
+
+/**
  * Fordeler bilder på turer. Samme bilde kan passe flere turer, men hver tur får
  * ikke det samme toppbildet som naboturen – da blir lista ensformig.
  *

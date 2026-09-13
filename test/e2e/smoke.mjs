@@ -188,6 +188,41 @@ try {
   await page.waitForTimeout(300);
   check('filtrene kan nullstilles', (await page.locator('.card').count()) === cardCount);
 
+  /* Fasiliteter: bading, bål, buss til start, HC */
+  await page
+    .waitForFunction(() => window.lykkeligtur.state.discovery.all.some((trip) => trip.features?.length), null, {
+      timeout: 90000,
+    })
+    .catch(() => {});
+  const tagged = await page.evaluate(() => {
+    const counts = {};
+    for (const trip of window.lykkeligtur.state.discovery.all) {
+      for (const id of trip.features ?? []) counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  });
+  check(
+    'turene merkes med hva som finnes langs dem',
+    Object.keys(tagged).length > 0,
+    Object.entries(tagged).map(([k, v]) => `${k}:${v}`).join(' '),
+  );
+
+  if (Object.keys(tagged).length) {
+    const [feature] = Object.entries(tagged).sort((a, b) => b[1] - a[1])[0];
+    await page.click(`.chip--toggle[title]:has-text("${
+      { bading: 'Bading', bål: 'Bål og grill', rasteplass: 'Rasteplass', utsikt: 'Utsikt', hytte: 'Hytte', toalett: 'Toalett', lek: 'Lekeplass', kollektiv: 'Buss til start', hc: 'HC-fasiliteter' }[feature]
+    }")`);
+    await page.waitForTimeout(400);
+    const onlyMatching = await page.evaluate(
+      (id) => window.lykkeligtur.state.discovery.visible.every((trip) => trip.features?.includes(id)),
+      feature,
+    );
+    const shown = await page.locator('.card').count();
+    check('fasilitetsfilter virker', onlyMatching && shown > 0, `${shown} turer med ${feature}`);
+    await page.click('.linkish:has-text("Nullstill filtre")');
+    await page.waitForTimeout(300);
+  }
+
   /* Bilder fra Wikimedia Commons */
   await page
     .waitForFunction(() => document.querySelector('.card__photo img')?.complete === true, null, { timeout: 60000 })

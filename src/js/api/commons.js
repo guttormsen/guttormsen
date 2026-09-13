@@ -123,6 +123,63 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Søker opp bilder på navn i stedet for på koordinat.
+ *
+ * Et geosøk finner bare det som er geotagget nær ruta, og mange av de beste
+ * bildene er tagget på toppen eller ikke i det hele tatt. Et navnesøk på
+ * «Preikestolen» finner dem – men søket er upresist, så kallende kode må
+ * kontrollere at treffet faktisk har med turen å gjøre.
+ *
+ * @param {string} name turens navn
+ */
+export async function searchPhotosByName(name, { limit = 12, width = 800, signal } = {}) {
+  const term = String(name ?? '').trim();
+  if (term.length < 3) return [];
+
+  const url = withQuery(COMMONS, {
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    generator: 'search',
+    gsrsearch: `${term} filetype:bitmap`,
+    gsrnamespace: 6,
+    gsrlimit: limit,
+    prop: 'imageinfo|coordinates',
+    colimit: 'max',
+    iiprop: 'url|extmetadata',
+    iiurlwidth: width,
+    iiextmetadatafilter: 'LicenseShortName|LicenseUrl|Artist|ImageDescription',
+  });
+
+  const data = await request(url, { ttl: 24 * 60 * 60 * 1000, signal, timeout: 20000, retries: 1 });
+  return Object.values(data?.query?.pages ?? {})
+    .map((page) => {
+      // Treff fra navnesøk har ofte ingen koordinat; de vurderes på navn alene.
+      const info = page.imageinfo?.[0];
+      if (!info) return null;
+      const extmetadata = info.extmetadata ?? {};
+      const coordinate = page.coordinates?.[0];
+      return {
+        id: String(page.pageid ?? page.title),
+        title: String(page.title ?? '').replace(/^File:/, ''),
+        thumb: info.thumburl ?? info.url,
+        width: info.thumbwidth ?? null,
+        height: info.thumbheight ?? null,
+        lat: coordinate?.lat ?? null,
+        lon: coordinate?.lon ?? null,
+        pageUrl: info.descriptionurl ?? null,
+        author: meta(extmetadata, 'Artist') || null,
+        license: meta(extmetadata, 'LicenseShortName') || null,
+        licenseUrl: extmetadata.LicenseUrl?.value ?? null,
+        description: meta(extmetadata, 'ImageDescription') || null,
+        /** Kom fra navnesøk, ikke fra geosøk. */
+        fromSearch: true,
+      };
+    })
+    .filter(Boolean);
+}
+
+/**
  * Korte utdrag fra norsk Wikipedia nær et punkt.
  * Kallende kode avgjør om artikkelen faktisk handler om turen.
  *

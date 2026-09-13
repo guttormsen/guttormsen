@@ -222,11 +222,14 @@ export const DEFAULT_FILTERS = {
   special: null,
   markedOnly: false,
   maxMinutes: null,
+  /** Merker fra `features.js` – bading, bål, buss til start, HC. */
+  features: [],
 };
 
 export const hasActiveFilters = (filters) =>
   filters.lengths.length > 0 ||
   filters.grades.length > 0 ||
+  filters.features.length > 0 ||
   filters.shape != null ||
   filters.special != null ||
   filters.markedOnly ||
@@ -248,6 +251,10 @@ export function filterTrips(trips, filters, origin = null) {
     if (filters.shape === 'strekning' && trip.loop) return false;
     if (filters.special && trip.special?.id !== filters.special) return false;
     if (filters.markedOnly && !trip.marked) return false;
+    // Flere merker krever at turen har dem alle – man vil både bade og grille.
+    if (filters.features.length && !filters.features.every((id) => trip.features?.includes(id))) {
+      return false;
+    }
     // Tidsfilteret slår først inn når høydene er hentet.
     if (filters.maxMinutes != null && trip.seconds != null && trip.seconds / 60 > filters.maxMinutes) {
       return false;

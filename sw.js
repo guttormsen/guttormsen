@@ -33,6 +33,7 @@ const SHELL_FILES = [
   'src/js/trips.js',
   'src/js/journal.js',
   'src/js/photos.js',
+  'src/js/features.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',

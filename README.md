@@ -22,7 +22,9 @@ ved første besøk etter navnebyttet.
 | | |
 |---|---|
 | **Finn tur** | Henter navngitte, merkede turer fra den nasjonale rutebasen der du er, og setter løse rutesegmenter sammen til hele turer. Filtrer på lengde, vanskegrad, rundtur, merking og rutetype – eller trykk «Overrask meg». Ett trykk på et kort laster hele turen inn ferdig planlagt. |
-| **Bilder fra turen** | Geotaggede foto fra Wikimedia Commons, koblet til riktig tur og rangert etter hvor godt de passer. Kart, kommunevåpen og kjøpesentre siles bort. Fotograf og lisens står på hvert bilde. |
+| **Bilder fra turen** | Foto fra Wikimedia Commons, funnet både på turens navn og på koordinat, koblet til riktig tur og rangert etter hvor godt de passer. Kart, kommunevåpen og kjøpesentre siles bort. Fotograf og lisens står på hvert bilde. |
+| **Hva finnes langs ruta** | Badeplass, bålplass, rasteplass, utsikt, hytte, toalett, lekeplass og buss til start – hentet fra OpenStreetMap og vist som merker på turkortet. Filtrer på dem for å finne turen som passer dagen. |
+| **Tilgjengelighet** | Fasiliteter merket som rullestolvennlige i OpenStreetMap vises med ♿, og kan filtreres på. Merket sier noe om toalettet, parkeringen eller rasteplassen – ikke om selve stien. |
 | **Om stedet** | Et kort utdrag fra norsk Wikipedia når artikkelen faktisk handler om turen – ikke bare tilfeldigvis ligger i nærheten. |
 | **Turdagbok** | Marker en tur som gått, så samler den seg opp med kilometer og høydemeter. Fjorten merker å samle, og sammenligninger som gjør tallene til noe man kjenner igjen: «du har klatret 1,4 × Galdhøpiggen». |
 | **Ekte kart** | Kartverkets topografiske kart, gråtonekart, turkart og sjøkart – det samme grunnlaget som norgeskart.no. |
@@ -71,7 +73,7 @@ Alt er åpne data. Ingen API-nøkler kreves.
 | [Geonorge – Stedsnavn (SSR)](https://ws.geonorge.no/stedsnavn/v1/) | Stedsnavnsøk | NLOD |
 | [MET Norway Locationforecast](https://api.met.no/) | Værvarsel og soloppgang/solnedgang | CC BY 4.0 |
 | [NVE / Varsom](https://api01.nve.no/) | Snøskredvarsel | NLOD |
-| [OpenStreetMap via Overpass](https://overpass-api.de/) | Hytter, topper og stier der Turrutebasen mangler | ODbL |
+| [OpenStreetMap via Overpass](https://overpass-api.de/) | Hytter, topper, badeplasser, rasteplasser, toaletter, busstopp og stier der Turrutebasen mangler | ODbL |
 | [Wikimedia Commons](https://commons.wikimedia.org/) | Bilder fra turområdene | Per bilde – vises ved hvert foto |
 | [Wikipedia (bokmål)](https://no.wikipedia.org/) | Korte stedsbeskrivelser | CC BY-SA 4.0 |
 
@@ -93,16 +95,38 @@ Det appen gjør i stedet:
 
 Skulle DNT åpne et API igjen, er `src/js/api/` stedet å legge det inn.
 
+### Hvorfor ikke Google Maps?
+
+Google Places og Places Photos krever en API-nøkkel knyttet til et
+betalingskort. I en statisk nettside uten server ligger den nøkkelen åpent i
+koden, og hvem som helst kan bruke den på din regning. Vilkårene til Google
+tillater heller ikke å lagre bildene eller vise dem løsrevet fra Google Maps.
+
+Wikimedia Commons krever ingen nøkkel, har frie lisenser, tillater
+mellomlagring og har god dekning i norsk natur. Det er derfor bildene kommer
+derfra – ikke fordi Google ville vært bedre, men fordi det er den kilden som
+faktisk kan brukes slik denne appen er bygget.
+
+Samme sak for turdata: ut.no har ikke lenger noe åpent API, AllTrails og
+Komoot har ingen offentlige endepunkter, og Strava krever OAuth per bruker.
+Turrutebasen er både åpen og den kilden DNT og kommunene selv leverer til.
+
 ### Om bildene
 
-Bildene er geotagget av fotografene selv, og et rent geografisk søk gir mye
-rart: kart, kommunevåpen, en fotballstadion i nabodalen. Utvalget siles derfor
-på filnavn, og rangeres på hvor godt navnet matcher turen, hvor nær ruta bildet
-er tatt, og om motivet ser ut til å være natur. Uten navnetreff må bildet ligge
-tett på ruta for å bli med.
+Bildene hentes på to måter. Et **geosøk** finner alt som er geotagget rundt
+kartutsnittet; utsnittet deles i fire søk, siden ett søk bare gir de femti
+nærmeste og de i en by alle ligger i sentrum. Et **navnesøk** på turens navn
+finner i tillegg de bildene ingen har geotagget langs ruta – det er slik
+«Preikestolen – Pulpit Rock» og «Tromsdalstinden» dukker opp.
+
+Begge kildene er upresise hver for seg. Et geosøk gir kart, kommunevåpen og en
+fotballstadion i nabodalen; et navnesøk på «Preikestolen» gir «Panorama of
+Lysefjord». Utvalget siles derfor på filnavn, og rangeres på navnetreff, nærhet
+til ruta og om motivet ser ut til å være natur. Uten navnetreff må bildet ligge
+tett på ruta, og et navnetreff langt utenfor landskapet forkastes.
 
 Det er fortsatt et bilde *fra området*, ikke nødvendigvis av stien – og det er
-sånn det står i appen. Omtrent halvparten av turene får et bilde; resten vises
+sånn det står i appen. I Bergen får rundt 46 av 81 turer et bilde; resten vises
 like fint uten.
 
 ### Om dekningen
@@ -153,7 +177,8 @@ src/js/
   map.js                Leaflet: lag, markører, tegning av ruta
   trips.js              turforslag: sy sammen ruter, filtrere og sortere
   journal.js            turdagbok, merker og sammenligninger
-  photos.js             kobler geotaggede bilder til riktig tur
+  photos.js             kobler bilder til riktig tur og siler bort kart og logoer
+  features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
   route.js              lengde, stigning, tidsestimat, gradering
   geo.js                ren geometri (avstand, fortetting, forenkling)
   snap.js               stigraf og korteste veg («Følg sti»)
@@ -166,8 +191,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   120 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 37 sjekker mot ekte tjenester
+test/                   143 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 39 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

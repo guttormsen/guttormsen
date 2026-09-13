@@ -5,7 +5,9 @@ import {
   attachPhotos,
   buildPhotoIndex,
   isLikelyPhoto,
+  mergePhotos,
   photosForTrip,
+  photosFromSearch,
   scorePhoto,
   significantWords,
 } from '../src/js/photos.js';
@@ -162,4 +164,69 @@ test('articleMatches krever at artikkelen deler navn med turen', () => {
   assert.equal(articleMatches('TUIL Arena', 'Tromsdalstinden'), false);
   assert.equal(articleMatches('Nøklevann', 'Blåmerket sti Østmarka'), false);
   assert.equal(articleMatches('Hva som helst', ''), false);
+});
+
+/* ---------- Navnesøk ---------- */
+
+const named = (id, title, extra = {}) => ({
+  id,
+  title,
+  thumb: `https://example.org/${id}.jpg`,
+  width: 800,
+  height: 600,
+  fromSearch: true,
+  lat: null,
+  lon: null,
+  ...extra,
+});
+
+const preikestolen = { name: 'Preikestolen', points: [{ lat: 58.9864, lon: 6.1904 }] };
+
+test('photosFromSearch krever at navnet faktisk står i bildet', () => {
+  const found = photosFromSearch(
+    [
+      named('a', 'Preikestolen - Pulpit Rock.jpg'),
+      named('b', 'Panorama of Lysefjord.jpg'),
+      named('c', 'Picture of Polaroid image.jpg'),
+    ],
+    preikestolen,
+  );
+  assert.deepEqual(found.map((p) => p.id), ['a']);
+});
+
+test('photosFromSearch forkaster treff som ligger i et annet landskap', () => {
+  const langtUnna = named('a', 'Preikestolen replica.jpg', { lat: 69.6, lon: 19.0 });
+  assert.deepEqual(photosFromSearch([langtUnna], preikestolen), []);
+});
+
+test('photosFromSearch rangerer bekreftet posisjon høyest', () => {
+  const found = photosFromSearch(
+    [
+      named('uten', 'Preikestolen i tåke.jpg'),
+      named('med', 'Preikestolen om sommeren.jpg', { lat: 58.9865, lon: 6.1905 }),
+    ],
+    preikestolen,
+  );
+  assert.equal(found[0].id, 'med');
+});
+
+test('photosFromSearch gir tom liste uten brukbart navn', () => {
+  assert.deepEqual(photosFromSearch([named('a', 'Noe.jpg')], { name: '', points: [] }), []);
+  assert.deepEqual(photosFromSearch([], preikestolen), []);
+});
+
+test('photosFromSearch slipper ikke gjennom kart og logoer', () => {
+  assert.deepEqual(photosFromSearch([named('a', 'Kart over Preikestolen.png')], preikestolen), []);
+});
+
+test('mergePhotos fjerner duplikater og setter de beste først', () => {
+  const merged = mergePhotos(
+    [{ id: 'a', score: 50 }, { id: 'b', score: 200 }],
+    [{ id: 'b', score: 10 }, { id: 'c', score: 120 }],
+  );
+  assert.deepEqual(merged.map((p) => p.id), ['b', 'c', 'a']);
+});
+
+test('mergePhotos takler tomme lister', () => {
+  assert.deepEqual(mergePhotos([], []), []);
 });

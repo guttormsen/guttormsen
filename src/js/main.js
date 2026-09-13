@@ -7,10 +7,11 @@ import { densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
 import { fetchElevations } from './api/hoydedata.js';
 import { fetchAvalancheWarning } from './api/varsom.js';
-import { fetchPois } from './api/overpass.js';
+import { fetchAreaFacilities, fetchPois } from './api/overpass.js';
 import { fetchFotruterForDiscovery } from './api/turrutebasen.js';
-import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear } from './api/commons.js';
-import { articleMatches, attachPhotos, buildPhotoIndex, photosForTrip } from './photos.js';
+import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear, searchPhotosByName } from './api/commons.js';
+import { articleMatches, attachPhotos, buildPhotoIndex, mergePhotos, photosForTrip, photosFromSearch } from './photos.js';
+import { attachFeatures } from './features.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -312,13 +313,19 @@ async function loadPhotosAndArticle(summary, id) {
 
   try {
     const radius = Math.max(2000, Math.min(10000, summary.distance));
-    const [photos, articles] = await Promise.all([
+    const trip = { name, points: summary.line };
+    const [near, named, articles] = await Promise.all([
       fetchPhotosNear(middle, { radius, width: 800 }).catch(() => []),
+      // Navnesøket finner bildene som ikke er geotagget langs ruta.
+      name ? searchPhotosByName(name).catch(() => []) : [],
       name ? fetchNearbyArticles(middle, { radius: Math.min(5000, radius) }).catch(() => []) : [],
     ]);
     if (id !== generation) return;
 
-    S.state.photos = photosForTrip(buildPhotoIndex(photos), { name, points: summary.line }, { limit: 8 });
+    S.state.photos = mergePhotos(
+      photosFromSearch(named, trip),
+      photosForTrip(buildPhotoIndex(near), trip, { limit: 8 }),
+    ).slice(0, 8);
     S.state.article = articles.find((article) => articleMatches(article.title, name)) ?? null;
   } finally {
     if (id === generation) {
@@ -370,6 +377,7 @@ async function loadDiscovery() {
     applyFilters();
     loadCardElevations(run);
     loadCardPhotos(run, box);
+    loadCardFeatures(run, box);
   } catch (error) {
     if (run !== discoveryRun) return;
     console.warn('Turrutebasen feilet', error);
@@ -437,6 +445,21 @@ async function loadCardPhotos(run, box) {
   }
 }
 
+/**
+ * Merker turene med hva som finnes langs dem – bading, bål, buss til start.
+ * Ett Overpass-kall dekker hele utsnittet.
+ */
+async function loadCardFeatures(run, box) {
+  try {
+    const facilities = await fetchAreaFacilities(box);
+    if (run !== discoveryRun || !facilities.length) return;
+    S.state.discovery.all = attachFeatures(S.state.discovery.all, facilities);
+    applyFilters();
+  } catch (error) {
+    console.warn('Fasiliteter fra Overpass feilet', error);
+  }
+}
+
 /** Viser eller skjuler «Finn turer her» etter hvor kartet står. */
 function updateSearchHere() {
   const button = $('#btn-search-here');
@@ -471,6 +494,15 @@ const handlers = {
   },
   onSpecial: (id) => {
     S.state.filters.special = S.state.filters.special === id ? null : id;
+    applyFilters();
+  },
+  onToggleFeature: (id) => {
+    const list = S.state.filters.features;
+    S.state.filters.features = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+    applyFilters();
+  },
+  onQuickTime: (minutes) => {
+    S.state.filters.maxMinutes = S.state.filters.maxMinutes === minutes ? null : minutes;
     applyFilters();
   },
   onToggleMarked: () => {

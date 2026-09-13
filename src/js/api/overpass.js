@@ -42,8 +42,12 @@ export const POI_KINDS = {
   gapahuk: { label: 'Gapahuk/bu', icon: '⛺' },
   topp: { label: 'Topp', icon: '⛰️' },
   utsikt: { label: 'Utsiktspunkt', icon: '🔭' },
+  bading: { label: 'Badeplass', icon: '🏊' },
+  rasteplass: { label: 'Rasteplass', icon: '🧺' },
+  bål: { label: 'Bål og grill', icon: '🔥' },
   vann: { label: 'Drikkevann', icon: '💧' },
-  bål: { label: 'Bålplass', icon: '🔥' },
+  toalett: { label: 'Toalett', icon: '🚻' },
+  lek: { label: 'Lekeplass', icon: '🛝' },
   parkering: { label: 'Parkering', icon: '🅿️' },
   kollektiv: { label: 'Kollektiv', icon: '🚌' },
 };
@@ -53,12 +57,70 @@ function classify(tags = {}) {
   if (tags.tourism === 'wilderness_hut' || tags.amenity === 'shelter') return 'gapahuk';
   if (tags.natural === 'peak') return 'topp';
   if (tags.tourism === 'viewpoint') return 'utsikt';
+  if (tags.leisure === 'swimming_area' || tags.natural === 'beach' || tags.leisure === 'beach_resort') {
+    return 'bading';
+  }
+  if (tags.tourism === 'picnic_site' || tags.leisure === 'picnic_table') return 'rasteplass';
+  if (tags.leisure === 'firepit' || tags.amenity === 'bbq') return 'bål';
   if (tags.amenity === 'drinking_water' || tags.natural === 'spring') return 'vann';
-  if (tags.leisure === 'firepit') return 'bål';
+  if (tags.amenity === 'toilets') return 'toalett';
+  if (tags.leisure === 'playground') return 'lek';
   if (tags.amenity === 'parking') return 'parkering';
   if (tags.highway === 'bus_stop' || tags.railway === 'station' || tags.public_transport === 'station')
     return 'kollektiv';
   return null;
+}
+
+/**
+ * Rullestoltilgang slik OpenStreetMap oppgir den.
+ * Sier noe om selve fasiliteten, ikke om stien dit.
+ */
+export function wheelchairAccess(tags = {}) {
+  if (tags.wheelchair === 'yes' || tags.wheelchair === 'designated') return 'ja';
+  if (tags.wheelchair === 'limited') return 'delvis';
+  if (tags.wheelchair === 'no') return 'nei';
+  return null;
+}
+
+/** Overpass-uttrykk for alt vi kaller en fasilitet. */
+const FACILITY_QUERY = (area) => `
+  node["tourism"~"^(alpine_hut|wilderness_hut|chalet|viewpoint|picnic_site)$"](${area});
+  way["tourism"~"^(alpine_hut|wilderness_hut|chalet|picnic_site)$"](${area});
+  node["amenity"~"^(shelter|drinking_water|toilets|bbq|parking)$"](${area});
+  way["amenity"~"^(parking|toilets)$"](${area});
+  node["leisure"~"^(firepit|picnic_table|swimming_area|playground|beach_resort)$"](${area});
+  way["leisure"~"^(swimming_area|playground|beach_resort)$"](${area});
+  node["natural"~"^(peak|spring|beach)$"]["name"](${area});
+  way["natural"="beach"](${area});
+  node["highway"="bus_stop"](${area});
+  node["railway"="station"](${area});
+`;
+
+/** Gjør et Overpass-element om til en fasilitet vi kan vise. */
+function toPoi(element) {
+  const tags = element.tags ?? {};
+  const kind = classify(tags);
+  if (!kind) return null;
+  const lat = element.lat ?? element.center?.lat;
+  const lon = element.lon ?? element.center?.lon;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return {
+    id: `${element.type}/${element.id}`,
+    kind,
+    lat,
+    lon,
+    name: tags.name ?? tags['name:no'] ?? POI_KINDS[kind].label,
+    operator: tags.operator ?? null,
+    elevation: tags.ele ? Number(tags.ele) : null,
+    website: tags.website ?? tags['contact:website'] ?? null,
+    wheelchair: wheelchairAccess(tags),
+    /** Noen OSM-objekter peker på et bilde. Brukes når Commons ikke har noe. */
+    image: tags.image ?? null,
+    commons: tags.wikimedia_commons ?? null,
+    fee: tags.fee ?? null,
+    /** DNT-hytter har som regel operator som starter med «DNT». */
+    dnt: /(^|\s)DNT(\s|$)|Turistforening/i.test(tags.operator ?? ''),
+  };
 }
 
 /**
@@ -67,54 +129,40 @@ function classify(tags = {}) {
  */
 export async function fetchPois(route, { radius = 700, signal } = {}) {
   if (route.length < 1) return [];
-  const near = `around:${radius},${aroundList(route)}`;
   const query = `[out:json][timeout:40];
-(
-  node["tourism"~"^(alpine_hut|wilderness_hut|chalet|viewpoint)$"](${near});
-  way["tourism"~"^(alpine_hut|wilderness_hut|chalet)$"](${near});
-  node["amenity"="shelter"](${near});
-  node["natural"="peak"]["name"](${near});
-  node["natural"="spring"]["drinking_water"!="no"](${near});
-  node["amenity"="drinking_water"](${near});
-  node["leisure"="firepit"](${near});
-  node["amenity"="parking"](${near});
-  way["amenity"="parking"](${near});
-  node["highway"="bus_stop"](${near});
-  node["railway"="station"](${near});
-);
-out center tags 250;`;
+(${FACILITY_QUERY(`around:${radius},${aroundList(route)}`)});
+out center tags 300;`;
 
   const data = await overpass(query, { signal });
-  const seen = new Set();
+  return dedupe((data?.elements ?? []).map(toPoi).filter(Boolean));
+}
 
-  return (data?.elements ?? [])
-    .map((element) => {
-      const tags = element.tags ?? {};
-      const kind = classify(tags);
-      if (!kind) return null;
-      const lat = element.lat ?? element.center?.lat;
-      const lon = element.lon ?? element.center?.lon;
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return {
-        id: `${element.type}/${element.id}`,
-        kind,
-        lat,
-        lon,
-        name: tags.name ?? tags['name:no'] ?? POI_KINDS[kind].label,
-        operator: tags.operator ?? null,
-        elevation: tags.ele ? Number(tags.ele) : null,
-        website: tags.website ?? tags['contact:website'] ?? null,
-        /** DNT-hytter har som regel operator som starter med "DNT". */
-        dnt: /(^|\s)DNT(\s|$)|Turistforening/i.test(tags.operator ?? ''),
-      };
-    })
-    .filter((poi) => {
-      if (!poi) return false;
-      const key = `${poi.kind}|${poi.name}|${poi.lat.toFixed(3)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+/**
+ * Alle fasiliteter i et kartutsnitt, i ett kall.
+ * Brukes til å merke turforslagene med bading, bål, toalett og kollektivt,
+ * uten å spørre Overpass én gang per tur.
+ *
+ * @param {[number,number,number,number]} box `[sør, vest, nord, øst]`
+ */
+export async function fetchAreaFacilities(box, { signal } = {}) {
+  const area = box.map((value) => value.toFixed(5)).join(',');
+  const query = `[out:json][timeout:60];
+(${FACILITY_QUERY(area)});
+out center tags 2000;`;
+
+  const data = await overpass(query, { signal, timeout: 60000 });
+  return dedupe((data?.elements ?? []).map(toPoi).filter(Boolean));
+}
+
+/** Samme sted kartlagt både som node og flate skal bare telle én gang. */
+function dedupe(pois) {
+  const seen = new Set();
+  return pois.filter((poi) => {
+    const key = `${poi.kind}|${poi.name}|${poi.lat.toFixed(3)}|${poi.lon.toFixed(3)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Vegtyper vi lar ruta følge, med kostnadsvekt (lavere = mer ønskelig). */

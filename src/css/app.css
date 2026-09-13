@@ -938,6 +938,48 @@ button {
   border-radius: 999px;
 }
 
+.tag--feature {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.tag--hc {
+  color: var(--sky);
+  background: var(--sky-soft);
+}
+
+.tag--more {
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: help;
+}
+
+.feature-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.feature-row .tag {
+  padding: 5px 11px;
+  font-size: 12.5px;
+}
+
+.access {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.access--ja {
+  font-weight: 600;
+  color: var(--sky);
+}
+
+.access--nei {
+  color: var(--ink-3);
+}
+
 .card__by {
   font-size: 11.5px;
   color: var(--ink-3);

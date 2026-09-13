@@ -9,6 +9,7 @@ import { describeSymbol, describeWind } from './api/met.js';
 import { closestPointOnPath, compassPoint } from './geo.js';
 import { daylightCheck } from './weather.js';
 import { GRADES, LENGTH_BUCKETS, SPECIAL_TYPES, hasActiveFilters } from './trips.js';
+import { FEATURES, FEATURE_LIST, topFeatures } from './features.js';
 import { badgeStatus, highlights, nextBadges, totals } from './journal.js';
 import { segmented } from './ui.js';
 import {
@@ -139,6 +140,18 @@ export function renderDiscover(discovery, filters, handlers) {
           }),
         ),
       ),
+      el('div', { class: 'chips', role: 'group', 'aria-label': 'Hva vil du ha med' }, [
+        chip('Under 1 time', filters.maxMinutes === 60, () => handlers.onQuickTime(60), {
+          icon: '⏱️',
+          title: 'Turer som tar under en time',
+        }),
+        ...['bading', 'bål', 'rasteplass', 'utsikt', 'kollektiv', 'hc', 'toalett', 'lek'].map((id) =>
+          chip(FEATURES[id].label, filters.features.includes(id), () => handlers.onToggleFeature(id), {
+            icon: FEATURES[id].icon,
+            title: FEATURES[id].hint ?? `Turer med ${FEATURES[id].label.toLowerCase()} langs ruta`,
+          }),
+        ),
+      ]),
       el('div', { class: 'chips', role: 'group', 'aria-label': 'Vanskegrad' }, [
         ...gradeFilters.map((grade) =>
           el('button', {
@@ -271,6 +284,7 @@ function photoCredit(photo, { compact = false } = {}) {
 }
 
 function tripCard(trip, handlers) {
+  const { shown, rest } = topFeatures(trip.features ?? []);
   const facts = [
     formatDistance(trip.length),
     trip.ascent != null ? `${formatElevation(trip.ascent)} opp` : null,
@@ -314,6 +328,19 @@ function tripCard(trip, handlers) {
         trip.loop ? el('span', { class: 'tag', text: '🔄 Rundtur' }) : el('span', { class: 'tag', text: '↗ Strekning' }),
         trip.marked && el('span', { class: 'tag', text: '🚩 Merket' }),
         trip.special && el('span', { class: 'tag', text: `${trip.special.icon} ${trip.special.label}` }),
+        ...shown.map((id) =>
+          el('span', {
+            class: `tag tag--feature${id === 'hc' ? ' tag--hc' : ''}`,
+            title: FEATURES[id]?.hint ?? `${FEATURES[id].label} langs ruta`,
+            text: `${FEATURES[id].icon} ${FEATURES[id].label}`,
+          }),
+        ),
+        rest > 0 &&
+          el('span', {
+            class: 'tag tag--more',
+            title: (trip.features ?? []).map((id) => FEATURES[id].label).join(', '),
+            text: `+${rest}`,
+          }),
         trip.distanceFromYou != null &&
           el('span', { class: 'tag', text: `📍 ${formatDistance(trip.distanceFromYou)} unna` }),
       ]),
@@ -348,6 +375,7 @@ export function renderTrip(context, handlers) {
 
   return [
     gallerySection(photos, loading.photos),
+    featureSection(featuresAlongRoute(pois)),
     articleSection(article),
     quickSettings(trip, startTime, handlers),
     weatherSection(weather, sun, loading.weather, startTime),
@@ -628,6 +656,28 @@ function safetySection(summary, sun, avalanche, startTime, checklist, handlers) 
   return section('Sikkerhet', body, { collapsible: true, open: warnings > 0, badge: warnings ? String(warnings) : null });
 }
 
+/** Utleder merkene av de fasilitetene vi allerede har hentet for ruta. */
+function featuresAlongRoute(pois) {
+  if (!pois?.length) return [];
+  return FEATURE_LIST.filter((feature) =>
+    pois.some((poi) => (feature.wheelchairOnly ? poi.wheelchair === 'ja' : feature.kinds?.includes(poi.kind))),
+  ).map((feature) => feature.id);
+}
+
+/** Kjapp oversikt over hva som finnes langs turen. */
+function featureSection(features) {
+  if (!features?.length) return null;
+  return el('div', { class: 'feature-row' },
+    features.map((id) =>
+      el('span', {
+        class: `tag tag--feature${id === 'hc' ? ' tag--hc' : ''}`,
+        title: FEATURES[id]?.hint ?? `${FEATURES[id].label} langs ruta`,
+        text: `${FEATURES[id].icon} ${FEATURES[id].label}`,
+      }),
+    ),
+  );
+}
+
 function poiSection(pois, summary, loading, handlers) {
   if (loading) return section('Langs ruta', el('p', { class: 'hint', text: 'Ser etter hytter, topper og vann …' }), { collapsible: true, open: false });
   if (!pois.length) {
@@ -663,6 +713,17 @@ function poiSection(pois, summary, loading, handlers) {
                 .filter(Boolean)
                 .join(' · '),
             }),
+            poi.wheelchair &&
+              el('span', {
+                class: `access access--${poi.wheelchair}`,
+                title: 'Rullestoltilgang slik OpenStreetMap oppgir den',
+                text:
+                  poi.wheelchair === 'ja'
+                    ? '♿ Rullestolvennlig'
+                    : poi.wheelchair === 'delvis'
+                      ? '♿ Delvis tilgjengelig'
+                      : '♿ Ikke tilrettelagt',
+              }),
           ]),
           (poi.website || poi.kind === 'hytte') &&
             el('a', {
