@@ -66,6 +66,15 @@ export const state = {
   article: null,
   /** Turforslaget som vises i kartet akkurat nå. */
   preview: null,
+
+  /** Turmodus: posisjonen din målt mot ruta. */
+  navigation: {
+    active: false,
+    startedAt: null,
+    position: null,
+    progress: null,
+    follow: true,
+  },
 };
 
 /** Bygger en tur av et turforslag, med hele den kartlagte geometrien beholdt. */

@@ -384,6 +384,12 @@ export function createMap(container, handlers = {}) {
       return [south, west, north, east];
     },
 
+    /** Sentrerer på posisjonen uten å endre zoom – brukes mens man går. */
+    follow(point) {
+      if (!point) return;
+      map.panTo([point.lat, point.lon], { animate: true, duration: 0.6 });
+    },
+
     center() {
       const { lat, lng } = map.getCenter();
       return { lat, lon: lng };

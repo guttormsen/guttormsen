@@ -13,6 +13,7 @@ import { fetchAreaPhotos, fetchNearbyArticles, fetchPhotosNear, searchPhotosByNa
 import { articleMatches, attachPhotos, buildPhotoIndex, mergePhotos, photosForTrip, photosFromSearch } from './photos.js';
 import { attachFeatures } from './features.js';
 import { buildTrailIndex, findTrailAt } from './trailhit.js';
+import { progressOnRoute } from './navigate.js';
 import { buildCheckpoints, loadSun, loadWeather } from './weather.js';
 import { createMap } from './map.js';
 import { createProfile } from './profile.js';
@@ -116,6 +117,76 @@ function hintNoTrail() {
   toast(message, {
     action: S.state.discovery.searched ? { label: 'Tegn selv', onClick: () => setDrawing(true) } : undefined,
   });
+}
+
+/* ---------- Turmodus ---------- */
+
+/** Holder skjermen våken mens man går. Ikke alle nettlesere støtter det. */
+let wakeLock = null;
+
+async function keepScreenAwake(on) {
+  try {
+    if (on) {
+      wakeLock = (await navigator.wakeLock?.request('screen')) ?? null;
+      wakeLock?.addEventListener?.('release', () => {
+        wakeLock = null;
+      });
+    } else {
+      await wakeLock?.release();
+      wakeLock = null;
+    }
+  } catch {
+    // Nettleseren tillot det ikke. Turen går fint uten.
+  }
+}
+
+// Skjermlåsen slippes når fanen skjules, så den må tas igjen etterpå.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.state.navigation.active && !wakeLock) keepScreenAwake(true);
+});
+
+function startNavigation() {
+  if (!S.state.summary) return;
+  setDrawing(false);
+  S.state.navigation.active = true;
+  S.state.navigation.startedAt = new Date().toISOString();
+  S.state.navigation.follow = true;
+  keepScreenAwake(true);
+  ensurePositionWatch();
+  S.setStartTime(new Date());
+  renderAll();
+  toast('God tur! Jeg følger med på hvor langt du har igjen.', { kind: 'ok' });
+}
+
+function stopNavigation({ log = false } = {}) {
+  const started = S.state.navigation.startedAt ? new Date(S.state.navigation.startedAt) : null;
+  S.state.navigation.active = false;
+  S.state.navigation.progress = null;
+  keepScreenAwake(false);
+  renderAll();
+
+  if (log && S.state.summary) {
+    const seconds = started ? (Date.now() - started.getTime()) / 1000 : S.state.summary.time.totalSeconds;
+    logCompletedTrip({ seconds, date: started?.toISOString() });
+  }
+}
+
+/** Regner om hvor du er på ruta hver gang posisjonen kommer inn. */
+function updateNavigation() {
+  const navigation = S.state.navigation;
+  if (!navigation.active || !navigation.position) return;
+  const before = navigation.progress;
+  navigation.progress = progressOnRoute(S.state.summary, navigation.position);
+
+  if (navigation.follow) view.follow(navigation.position);
+  if (navigation.progress?.offRoute && !before?.offRoute) {
+    toast('Du er kommet litt bort fra ruta.', { kind: 'advarsel' });
+  }
+  if (navigation.progress?.finished && !before?.finished) {
+    toast('Du er fremme! 🎉', { kind: 'ok' });
+  }
+  renderNavBar();
+  renderPane('turen');
 }
 
 /* ---------- Tegnemodus ---------- */
@@ -582,6 +653,7 @@ function updateSearchHere() {
 const handlers = {
   /* Finn tur */
   onSearchHere: () => loadDiscovery(),
+  onNearMe: () => findNearMe(),
   onToggleLength: (id) => {
     const list = S.state.filters.lengths;
     S.state.filters.lengths = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -678,23 +750,20 @@ const handlers = {
     renderPane('dagbok');
   },
 
-  /* Bunnrad */
-  onLogTrip: () => {
-    const summary = S.state.summary;
-    if (!summary) return;
-    const name = S.state.trip.name || suggestName();
-    const entry = logTrip({
-      name,
-      distance: summary.distance,
-      ascent: summary.ascent,
-      seconds: summary.time.totalSeconds,
-      maxElevation: summary.maxElevation,
-      loop: S.state.trip.waypoints.length > 1 && summary.distances.at(-1) > 0 && isLoop(summary),
-      date: S.state.trip.startTime,
-    });
-    toast(`«${entry.name}» er ført i dagboka. Godt gått!`, { kind: 'ok' });
-    selectTab('dagbok');
+  /* Turmodus */
+  onStart: () => startNavigation(),
+  onFinish: () => stopNavigation({ log: true }),
+  onToggleFollow: () => {
+    S.state.navigation.follow = !S.state.navigation.follow;
+    if (S.state.navigation.follow) view.follow(S.state.navigation.position);
+    renderNavBar();
   },
+  onCopyPosition: async (where) => {
+    toast((await copyText(where.text)) ? 'Posisjonen er kopiert.' : 'Kunne ikke kopiere.', { kind: 'ok' });
+  },
+
+  /* Bunnrad */
+  onLogTrip: () => logCompletedTrip(),
   onSave: () => {
     if (!S.state.trip.name) S.setName(suggestName());
     const record = S.saveTrip();
@@ -702,6 +771,26 @@ const handlers = {
   },
   onShare: () => share(),
 };
+
+/**
+ * Fører turen i dagboka. Etter en gjennomført tur brukes tiden det faktisk
+ * tok, ikke anslaget.
+ */
+function logCompletedTrip({ seconds, date } = {}) {
+  const summary = S.state.summary;
+  if (!summary) return;
+  const entry = logTrip({
+    name: S.state.trip.name || suggestName(),
+    distance: summary.distance,
+    ascent: summary.ascent,
+    seconds: seconds ?? summary.time.totalSeconds,
+    maxElevation: summary.maxElevation,
+    loop: isLoop(summary),
+    date: date ?? S.state.trip.startTime,
+  });
+  toast(`«${entry.name}» er ført i dagboka. Godt gått!`, { kind: 'ok' });
+  selectTab('dagbok');
+}
 
 const isLoop = (summary) => {
   const first = summary.line[0];
@@ -726,6 +815,7 @@ const PANES = {
         photos: S.state.photos,
         article: S.state.article,
         loading: S.state.loading,
+        navigation: S.state.navigation,
         checklist,
       },
       handlers,
@@ -744,6 +834,13 @@ function renderStats() {
   render($('#stats'), panels.renderStats(S.state.summary, S.state.loading).filter(Boolean));
 }
 
+function renderNavBar() {
+  const bar = $('#nav-bar');
+  bar.hidden = !S.state.navigation.active;
+  if (bar.hidden) return;
+  render(bar, panels.renderNavBar(S.state.navigation, S.state.summary, handlers).flat().filter(Boolean));
+}
+
 function renderAll() {
   const hasRoute = Boolean(S.state.summary);
   $('#route-header').hidden = !hasRoute || activeTab === 'dagbok';
@@ -755,7 +852,11 @@ function renderAll() {
       : 'Tegn selv';
 
   if (hasRoute) renderStats();
-  render($('#panel-footer'), panels.renderFooter(S.state.summary, handlers).flat().filter(Boolean));
+  renderNavBar();
+  render(
+    $('#panel-footer'),
+    panels.renderFooter(S.state.summary, S.state.navigation, handlers).flat().filter(Boolean),
+  );
   renderPane(activeTab);
   updateSearchHere();
 }
@@ -833,18 +934,12 @@ $('#btn-clear').addEventListener('click', () => {
   });
 });
 
-$('#btn-locate').addEventListener('click', () => {
+/** Starter posisjonsovervåking hvis den ikke alt går. */
+function ensurePositionWatch() {
+  if (watchId != null) return true;
   if (!navigator.geolocation) {
     toast('Nettleseren din deler ikke posisjon.', { kind: 'feil' });
-    return;
-  }
-  if (watchId != null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-    myPosition = null;
-    view.showPosition(null);
-    $('#btn-locate').classList.remove('is-on');
-    return;
+    return false;
   }
   $('#btn-locate').classList.add('is-on');
   watchId = navigator.geolocation.watchPosition(
@@ -856,12 +951,16 @@ $('#btn-locate').addEventListener('click', () => {
       };
       const first = myPosition == null;
       myPosition = point;
+      S.state.navigation.position = point;
       view.showPosition(point);
-      if (first) view.flyTo(point, 13);
+      if (first && !S.state.navigation.active) view.flyTo(point, 13);
+      updateNavigation();
+      pendingNearMe?.(point);
     },
     (error) => {
       $('#btn-locate').classList.remove('is-on');
       watchId = null;
+      pendingNearMe = null;
       toast(
         error.code === error.PERMISSION_DENIED
           ? 'Du må gi siden tilgang til posisjon i nettleserinnstillingene.'
@@ -869,9 +968,56 @@ $('#btn-locate').addEventListener('click', () => {
         { kind: 'feil' },
       );
     },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
   );
+  return true;
+}
+
+function stopPositionWatch() {
+  if (watchId == null) return;
+  navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+  myPosition = null;
+  S.state.navigation.position = null;
+  view.showPosition(null);
+  $('#btn-locate').classList.remove('is-on');
+}
+
+$('#btn-locate').addEventListener('click', () => {
+  if (watchId != null && !S.state.navigation.active) {
+    stopPositionWatch();
+    return;
+  }
+  if (S.state.navigation.active) {
+    // Under turen slår knappen «følg meg» av og på i stedet.
+    S.state.navigation.follow = !S.state.navigation.follow;
+    if (S.state.navigation.follow) view.follow(myPosition);
+    renderNavBar();
+    return;
+  }
+  ensurePositionWatch();
 });
+
+/**
+ * «Finn turer nær meg»: ber om posisjon, flytter kartet dit og søker.
+ * Kallet legges på vent til første posisjon er kommet inn.
+ */
+let pendingNearMe = null;
+
+function findNearMe() {
+  if (myPosition) {
+    view.map.setView([myPosition.lat, myPosition.lon], Math.max(view.zoom(), 12));
+    loadDiscovery();
+    return;
+  }
+  toast('Henter posisjonen din …');
+  pendingNearMe = (point) => {
+    pendingNearMe = null;
+    view.map.setView([point.lat, point.lon], 12);
+    setTimeout(() => loadDiscovery(), 400);
+  };
+  ensurePositionWatch();
+}
 
 /* ---------- Del, GPX og navn ---------- */
 
@@ -975,6 +1121,7 @@ document.addEventListener('keydown', (event) => {
 /* ---------- Kobling til tilstand ---------- */
 
 S.on('trip', ({ reason }) => {
+  if (S.state.navigation.active && ['load', 'reset'].includes(reason)) stopNavigation();
   if (reason === 'meta') {
     renderAll();
     return;
@@ -1005,6 +1152,15 @@ function boot() {
     navigator.serviceWorker.register('sw.js').catch(() => {
       /* offline-støtte er en bonus, ikke et krav */
     });
+    // Kommer det en ny utgave mens siden står åpen, skal den ikke bli
+    // hengende igjen på den gamle.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type !== 'oppdatert') return;
+      toast('Ny versjon av appen er klar.', {
+        duration: 20000,
+        action: { label: 'Last inn', onClick: () => location.reload() },
+      });
+    });
   }
 }
 
@@ -1014,4 +1170,4 @@ const clean = (object) =>
 boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
-window.lykkeligtur = { state: S.state, view, loadDiscovery, selectTab };
+window.lykkeligtur = { state: S.state, view, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };

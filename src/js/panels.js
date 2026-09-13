@@ -7,6 +7,7 @@ import { DANGER_LEVELS } from './api/varsom.js';
 import { POI_KINDS } from './api/overpass.js';
 import { describeSymbol, describeWind } from './api/met.js';
 import { closestPointOnPath, compassPoint } from './geo.js';
+import { arrivalTime, formatPosition, nextAhead } from './navigate.js';
 import { daylightCheck } from './weather.js';
 import { GRADES, LENGTH_BUCKETS, SPECIAL_TYPES, hasActiveFilters } from './trips.js';
 import { FEATURES, FEATURE_LIST, topFeatures } from './features.js';
@@ -117,6 +118,109 @@ export function renderStats(summary, loading) {
   return nodes;
 }
 
+/* ---------- Turmodus ---------- */
+
+/**
+ * Den smale linja som vises mens du går. Den ligger øverst i arket, slik at
+ * tallene er lesbare også når panelet er skjøvet ned.
+ */
+export function renderNavBar(navigation, summary, handlers) {
+  const { progress } = navigation;
+  if (!progress) {
+    return [el('p', { class: 'navbar__waiting', text: 'Venter på posisjon …' })];
+  }
+
+  if (progress.finished) {
+    return [
+      el('div', { class: 'navbar__done' }, [
+        el('strong', { text: '🎉 Du er fremme!' }),
+        el('button', { class: 'btn btn--primary', type: 'button', text: 'Avslutt og før i dagboka', onclick: handlers.onFinish }),
+      ]),
+    ];
+  }
+
+  return [
+    el('div', { class: 'navbar__numbers' }, [
+      el('div', { class: 'navbar__stat' }, [
+        el('span', { class: 'navbar__value', text: formatDistance(progress.distanceLeft) }),
+        el('span', { class: 'navbar__label', text: 'igjen' }),
+      ]),
+      el('div', { class: 'navbar__stat' }, [
+        el('span', { class: 'navbar__value', text: formatDuration(progress.secondsLeft) }),
+        el('span', { class: 'navbar__label', text: 'å gå' }),
+      ]),
+      el('div', { class: 'navbar__stat' }, [
+        el('span', { class: 'navbar__value', text: formatClock(arrivalTime(progress.secondsLeft)) }),
+        el('span', { class: 'navbar__label', text: 'fremme' }),
+      ]),
+      el('div', { class: 'navbar__stat' }, [
+        el('span', { class: 'navbar__value', text: formatElevation(progress.ascentLeft) }),
+        el('span', { class: 'navbar__label', text: 'opp igjen' }),
+      ]),
+    ]),
+    el('span', {
+      class: 'bar bar--nav',
+      role: 'progressbar',
+      'aria-valuenow': Math.round(progress.fraction * 100),
+      'aria-valuemin': '0',
+      'aria-valuemax': '100',
+      'aria-label': 'Hvor langt du har kommet',
+    }, [el('span', { class: 'bar__fill', style: `width:${Math.round(progress.fraction * 100)}%` })]),
+    el('div', { class: 'navbar__row' }, [
+      progress.offRoute
+        ? el('span', {
+            class: 'navbar__warn',
+            text: `⚠ ${formatDistance(progress.offRouteDistance)} fra ruta`,
+          })
+        : el('span', { class: 'navbar__ok', text: `På ruta · ${Math.round(progress.fraction * 100)} % gått` }),
+      el('button', {
+        class: `pill pill--tiny${navigation.follow ? ' is-on' : ''}`,
+        type: 'button',
+        text: navigation.follow ? '◎ Følger deg' : '◎ Følg meg',
+        onclick: handlers.onToggleFollow,
+      }),
+      el('button', { class: 'pill pill--tiny', type: 'button', text: 'Avslutt', onclick: handlers.onFinish }),
+    ]),
+  ];
+}
+
+/** Detaljene man vil ha når man stopper og tar opp telefonen. */
+function navDetails(navigation, pois, summary) {
+  const { progress, position } = navigation;
+  if (!progress) return null;
+
+  const ahead = nextAhead(
+    (pois ?? []).map((poi) => ({ ...poi, along: summary.distances[closestPointOnPath(poi, summary.line).index] })),
+    progress.distanceDone,
+  );
+  const where = formatPosition(position);
+
+  return section('Underveis', [
+    ahead &&
+      el('p', { class: 'next-up' }, [
+        el('span', { 'aria-hidden': 'true', text: `${POI_KINDS[ahead.kind].icon} ` }),
+        el('strong', { text: ahead.name }),
+        el('span', { text: ` om ${formatDistance(ahead.along - progress.distanceDone)}` }),
+      ]),
+    where &&
+      el('div', { class: 'position' }, [
+        el('span', { class: 'field__label', text: 'Posisjonen din' }),
+        el('output', { class: 'position__value', text: where.text }),
+        where.accuracy != null && el('span', { class: 'hint', text: `Nøyaktighet ±${where.accuracy} m` }),
+        el('p', { class: 'hint', text: 'Les disse tallene opp hvis du må ringe 113.' }),
+        el('button', {
+          class: 'btn',
+          type: 'button',
+          text: 'Kopier posisjon',
+          onclick: () => handlersRef.onCopyPosition?.(where),
+        }),
+      ]),
+  ]);
+}
+
+/** Settes av `renderTrip` så småknapper inne i seksjonene når fram. */
+let handlersRef = {};
+
 /* ---------- Finn tur ---------- */
 
 const gradeFilters = [
@@ -195,8 +299,9 @@ export function renderDiscover(discovery, filters, handlers) {
       el('div', { class: 'empty' }, [
         el('p', { class: 'empty__big', text: '🧭' }),
         el('p', { class: 'empty__title', text: 'Hvor skal vi i dag?' }),
-        el('p', { text: 'Søk opp et sted, eller flytt kartet dit du vil gå. Så finner jeg turene som allerede er merket der.' }),
-        el('button', { class: 'btn btn--primary', type: 'button', text: 'Finn turer her', onclick: handlers.onSearchHere }),
+        el('p', { text: 'Jeg finner de merkede turene som allerede finnes der du er – eller hvor som helst du flytter kartet.' }),
+        el('button', { class: 'btn btn--primary', type: 'button', text: '📍 Finn turer nær meg', onclick: handlers.onNearMe }),
+        el('button', { class: 'btn', type: 'button', text: 'Se i dette kartutsnittet', onclick: handlers.onSearchHere }),
       ]),
     );
     return nodes;
@@ -360,7 +465,9 @@ function localInputValue(date) {
 }
 
 export function renderTrip(context, handlers) {
-  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist } = context;
+  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist, navigation } =
+    context;
+  handlersRef = handlers;
 
   if (!summary) {
     return [
@@ -374,6 +481,7 @@ export function renderTrip(context, handlers) {
   }
 
   return [
+    navigation.active ? navDetails(navigation, pois, summary) : null,
     gallerySection(photos, loading.photos),
     featureSection(featuresAlongRoute(pois)),
     articleSection(article),
@@ -1032,11 +1140,14 @@ export function renderLayers(basemap, trailState, handlers) {
 
 /* ---------- Bunnrad ---------- */
 
-export function renderFooter(summary, handlers) {
+export function renderFooter(summary, navigation, handlers) {
   if (!summary) return [];
   return [
     el('div', { class: 'panel__buttons' }, [
-      el('button', { class: 'btn btn--primary', type: 'button', text: '✓ Jeg gikk denne', onclick: handlers.onLogTrip }),
+      navigation.active
+        ? el('button', { class: 'btn', type: 'button', text: '■ Avslutt turen', onclick: handlers.onFinish })
+        : el('button', { class: 'btn btn--primary', type: 'button', text: '▶ Start turen', onclick: handlers.onStart }),
+      el('button', { class: 'btn', type: 'button', text: '✓ Gikk den', onclick: handlers.onLogTrip }),
       el('button', { class: 'btn', type: 'button', text: 'Lagre', onclick: handlers.onSave }),
       el('button', { class: 'btn', type: 'button', text: 'Del', onclick: handlers.onShare }),
     ]),

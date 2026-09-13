@@ -6,7 +6,11 @@
  * slik at ruta du planla hjemme fortsatt kan leses på tur.
  */
 
-const VERSION = 'v1';
+/**
+ * Bump denne når appen endres. Gamle lagre slettes da ved aktivering, slik at
+ * ingen sitter igjen med en gammel utgave fra forrige besøk.
+ */
+const VERSION = 'v2';
 const SHELL = `lykkeligtur-shell-${VERSION}`;
 const TILES = `lykkeligtur-tiles-${VERSION}`;
 const DATA = `lykkeligtur-data-${VERSION}`;
@@ -70,7 +74,11 @@ self.addEventListener('install', (event) => {
     caches
       .open(SHELL)
       // Enkeltfiler kan feile (f.eks. bak en proxy) uten at hele installasjonen ryker.
-      .then((cache) => Promise.allSettled(SHELL_FILES.map((file) => cache.add(file))))
+      // `reload` hopper over nettleserens eget hurtiglager, så vi ikke lagrer
+      // en gammel utgave på nytt.
+      .then((cache) =>
+        Promise.allSettled(SHELL_FILES.map((file) => cache.add(new Request(file, { cache: 'reload' })))),
+      )
       .then(() => self.skipWaiting()),
   );
 });
@@ -82,7 +90,13 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(keys.filter((key) => ![SHELL, TILES, DATA].includes(key)).map((key) => caches.delete(key))),
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      // Sidene som står åpne skal ikke måtte lastes to ganger for å bli med.
+      .then(async () => {
+        for (const client of await self.clients.matchAll({ type: 'window' })) {
+          client.postMessage({ type: 'oppdatert', version: VERSION });
+        }
+      }),
   );
 });
 
