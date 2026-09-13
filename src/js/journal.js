@@ -5,7 +5,7 @@
  * gøyere å komme seg ut igjen: se hva du har gått, og hva som mangler til
  * neste milepæl.
  */
-import { store } from './util.js';
+import { store, uid } from './util.js';
 import { APP } from './config.js';
 
 const KEY = `${APP.storageKey}.journal`;
@@ -20,7 +20,9 @@ export const entries = () => store.get(KEY, []);
  */
 export function logTrip(trip) {
   const entry = {
-    id: `${Date.now().toString(36)}`,
+    // Tidsstempel alene holder ikke: to turer ført i samme millisekund ville
+    // fått samme id, og da slettes begge når man fjerner den ene.
+    id: `${Date.now().toString(36)}-${uid()}`,
     name: trip.name || 'Tur uten navn',
     date: trip.date ?? new Date().toISOString(),
     distance: Math.max(0, trip.distance || 0),
