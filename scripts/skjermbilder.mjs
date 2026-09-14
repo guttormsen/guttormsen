@@ -149,8 +149,12 @@ await page.touchscreen.tap(mapBox.x + pick.x, mapBox.y + pick.y);
 await page.waitForTimeout(1200);
 await shot('forhandsvisning');
 
-await page.waitForSelector('.preview__pick', { timeout: 30000 });
-await page.evaluate(() => document.querySelector('.preview__pick').click());
+// Traff vi ikke stien (smal skjerm), laster vi den første turen direkte.
+if (await page.locator('.preview__pick').count()) {
+  await page.evaluate(() => document.querySelector('.preview__pick').click());
+} else {
+  await page.evaluate(() => document.querySelector('.card')?.click());
+}
 await page.waitForFunction(() => window.lykkeligtur.state.trip.waypoints.length === 2, null, { timeout: 30000 });
 await page.waitForTimeout(5000);
 await shot('turen');

@@ -302,6 +302,13 @@ button {
   gap: 8px;
 }
 
+/* Liggende telefon: knappene på rad, ellers spiser stabelen hele kartet. */
+@media (max-height: 520px) and (max-width: 899px) {
+  .map-tools {
+    flex-direction: row;
+  }
+}
+
 .map-btn {
   display: grid;
   width: var(--tap);

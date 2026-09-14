@@ -734,6 +734,27 @@ try {
   await mobile.waitForTimeout(400);
   check('kartlagsmenyen lukkes med knappen', await mobile.locator('#layer-popover').isHidden());
 
+  /* Liggende telefon: kartet er det viktigste, ikke lista. */
+  await mobile.setViewportSize({ width: 780, height: 390 });
+  await mobile.waitForTimeout(600);
+  const landscape = await mobile.evaluate(() => {
+    const panel = document.querySelector('#panel').getBoundingClientRect();
+    const map = document.querySelector('.map-wrap').getBoundingClientRect();
+    const synligKart = Math.max(0, Math.min(panel.top, map.bottom) - map.top);
+    const knapper = [...document.querySelectorAll('.map-btn')].filter((b) => {
+      const box = b.getBoundingClientRect();
+      return box.bottom <= panel.top + 1;
+    }).length;
+    return { del: synligKart / map.height, knapper };
+  });
+  check(
+    'liggende telefon gir plass til kartet',
+    landscape.del > 0.5 && landscape.knapper === 3,
+    `${Math.round(landscape.del * 100)} % kart, ${landscape.knapper} av 3 kartknapper synlige`,
+  );
+  await mobile.setViewportSize({ width: 390, height: 780 });
+  await mobile.waitForTimeout(600);
+
   const tapTargets = await mobile.evaluate(() =>
     [...document.querySelectorAll('.tab, .map-btn, .pill, .btn')]
       .filter((node) => node.offsetParent !== null)

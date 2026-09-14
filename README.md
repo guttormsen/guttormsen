@@ -123,6 +123,10 @@ kastes opp eller ned, og står i tre stillinger:
 | Halvveis | Turlista eller turen, med kartet fortsatt synlig over |
 | Helt oppe | Bare innholdet, for lesing |
 
+Snur man telefonen sidelengs, blir skjermen lav. Da er kartet viktigere enn
+lista: arket krymper til håndtak og faner, og kartknappene legger seg på rad i
+stedet for å stable seg nedover kartet.
+
 Hele toppen av arket er dragflate – håndtaket, fanene og turlinja under turen.
 Det er mye lettere å treffe enn en tynn strek. Ett trykk på håndtaket slår
 arket opp eller sammen.
@@ -331,7 +335,7 @@ src/js/
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
 test/                   186 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 85 sjekker mot ekte tjenester
+test/e2e/smoke.mjs      røyktest i Chromium, 86 sjekker mot ekte tjenester
 scripts/skjermbilder.mjs bilder av hver skjerm på telefonstørrelse
 ```
 

@@ -1297,7 +1297,13 @@ function peekHeight() {
   // Turlinja ligger i dragflaten under turen; da trengs ingen ekstra plass.
   const extra = S.state.navigation.active ? 8 : 200;
   const safe = Number.parseFloat(getComputedStyle(document.body).getPropertyValue('--safe-bottom')) || 0;
-  return Math.min(window.innerHeight * 0.45, grab + extra + safe);
+  /*
+   * Snur man telefonen sidelengs, er skjermen lav. Da er kartet viktigere enn
+   * turlista, og arket skal ikke spise to tredeler av det man ser.
+   */
+  const høyde = window.innerHeight;
+  const tak = høyde < 520 ? Math.max(grab + 8, høyde * 0.34) : høyde * 0.45;
+  return Math.min(tak, grab + extra + safe);
 }
 
 /** Arket dras bare på mobil; på skrivebord er panelet en fast spalte. */
