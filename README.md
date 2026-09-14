@@ -331,7 +331,7 @@ src/js/
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
 test/                   186 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 82 sjekker mot ekte tjenester
+test/e2e/smoke.mjs      røyktest i Chromium, 83 sjekker mot ekte tjenester
 scripts/skjermbilder.mjs bilder av hver skjerm på telefonstørrelse
 ```
 

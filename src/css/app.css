@@ -40,6 +40,8 @@
    * arket i stedet for å forsvinne bak det.
    */
   --sheet-cover: var(--sheet-peek);
+  /* Høyden på dragflaten øverst i arket – håndtak, turlinje og faner. */
+  --sheet-head: 120px;
   --tap: 44px;
 
   /*
@@ -710,9 +712,14 @@ button {
     display: none;
   }
 
-  /* Meldinger må fram uansett – de flytter seg opp i stedet. */
+  /*
+   * Meldinger må fram uansett – de flytter seg opp i stedet, men under
+   * fanene og turlinja. Legger de seg oppå, dekker de nettopp det man
+   * trenger å lese mens man går.
+   */
   body[data-sheet='full'] .toasts {
-    top: calc(var(--safe-top) + var(--topbar-h) + 12px);
+    /* Arkets egen overkant er «100dvh minus det arket dekker». */
+    top: calc(100dvh - var(--sheet-cover) + var(--sheet-head) + 10px);
     bottom: auto;
   }
 }

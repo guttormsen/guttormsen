@@ -1162,8 +1162,13 @@ function renderNavBar() {
   const bar = $('#nav-bar');
   bar.hidden = !S.state.navigation.active;
   document.body.classList.toggle('is-navigating', S.state.navigation.active);
-  if (bar.hidden) return;
+  if (bar.hidden) {
+    publishSheetHead();
+    return;
+  }
   render(bar, panels.renderNavBar(S.state.navigation, S.state.summary, handlers).flat().filter(Boolean));
+  // Turlinja endrer høyden på dragflaten, og da flytter meldingene seg med.
+  publishSheetHead();
 }
 
 function renderAll() {
@@ -1263,8 +1268,20 @@ const sheetHandle = $('#sheet-handle');
  * det første turkortet vises – et ark som bare viser filterknapper forteller
  * ingenting om hva som finnes.
  */
+/**
+ * Høyden på dragflaten, delt med stilarket.
+ *
+ * Meldinger som flyttes opp når arket står helt oppe, må legge seg under
+ * fanene og turlinja – ikke oppå dem.
+ */
+function publishSheetHead() {
+  const head = $('#sheet-grab').offsetHeight;
+  document.documentElement.style.setProperty('--sheet-head', `${Math.round(head)}px`);
+  return head;
+}
+
 function peekHeight() {
-  const grab = $('#sheet-grab').offsetHeight;
+  const grab = publishSheetHead();
   // Turlinja ligger i dragflaten under turen; da trengs ingen ekstra plass.
   const extra = S.state.navigation.active ? 8 : 200;
   const safe = Number.parseFloat(getComputedStyle(document.body).getPropertyValue('--safe-bottom')) || 0;
@@ -1281,6 +1298,7 @@ const sheet = createSheet(panel, $('#sheet-grab'), {
     sheetHandle.setAttribute('aria-expanded', String(state !== 'peek'));
     // Et oppslått ark er også et lag: tilbake skal slå det sammen, ikke
     // lukke appen.
+    publishSheetHead();
     if (state === 'peek') forgetLayer('ark');
     else openLayer('ark', () => sheet.go('peek'));
     setTimeout(() => view.invalidate(), 280);

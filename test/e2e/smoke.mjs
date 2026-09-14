@@ -490,6 +490,21 @@ try {
 
   await page.evaluate(() => window.lykkeligtur.stopNavigation());
   await page.waitForTimeout(300);
+  // Meldinger som legger seg oppå turlinja dekker nettopp det man må lese.
+  const navbarClear = await page.evaluate(() => {
+    const host = document.querySelector('.toasts');
+    if (!host) return true;
+    const toast = host.getBoundingClientRect();
+    const clear = (node) => {
+      if (!node || node.hidden) return true;
+      const box = node.getBoundingClientRect();
+      if (box.height === 0) return true;
+      return toast.top >= box.bottom - 1 || toast.bottom <= box.top + 1;
+    };
+    return clear(document.querySelector('#nav-bar')) && clear(document.querySelector('.tabs'));
+  });
+  check('meldinger dekker verken turlinja eller fanene', navbarClear);
+
   check('turmodus kan avsluttes', await page.locator('#nav-bar').isHidden());
 
   /* Kartlag */
