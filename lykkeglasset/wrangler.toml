@@ -7,6 +7,10 @@ name = "lykkeglasset"
 main = "src/worker.js"
 compatibility_date = "2025-09-01"
 
+# Appen skal ha én adresse, ikke én per versjon. Forhåndsvisnings-URL-ene er
+# offentlige, og en privat dagbok har ingenting der å gjøre.
+preview_urls = false
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -15,7 +19,7 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "lykkeglasset"
 # Fylles inn av `npm run db:opprett`.
-database_id = "SETT_INN_HER"
+database_id = "66cbb8e7-9245-428a-8ef9-5830a1b5116f"
 
 [vars]
 # Telegram-gruppa varslene går til. Ingen hemmelighet – uten token er den ubrukelig.
