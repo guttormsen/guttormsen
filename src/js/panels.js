@@ -53,6 +53,9 @@ const chip = (label, active, onClick, { icon, title, disabled } = {}) =>
  */
 const foldState = new Map();
 
+/** Under dette er startpunktet så nært at buss er et rart svar. */
+const WALKABLE_TO_START_M = 1500;
+
 const section = (title, children, { open = true, collapsible = false, badge } = {}) => {
   if (!collapsible) {
     return el('section', { class: 'block' }, [
@@ -666,7 +669,7 @@ function localInputValue(date) {
 export function renderTrip(context, handlers) {
   const {
     trip, summary, startTime, weather, sun, avalanche, pois, poiError, photos, article,
-    loading, checklist, navigation, journeys, offline,
+    loading, checklist, navigation, journeys, journeysFor, journeysWalk, journeysError, offline,
   } = context;
   handlersRef = handlers;
 
@@ -691,7 +694,7 @@ export function renderTrip(context, handlers) {
   return [
     navigation.active ? navDetails(navigation, pois) : null,
     gallerySection(photos, loading.photos),
-    gettingThereSection(summary, journeys, loading.journeys, handlers),
+    gettingThereSection(summary, { journeys, journeysFor, journeysWalk, journeysError }, loading.journeys, handlers),
     featureSection(featuresAlongRoute(pois)),
     poiSection(pois, poiError, loading.pois, handlers),
     articleSection(article),
@@ -766,13 +769,27 @@ function articleSection(article) {
  * Hvordan komme seg til startpunktet. Uten bil er dette ofte det som avgjør
  * om turen blir noe av.
  */
-function gettingThereSection(summary, journeys, loading, handlers) {
+function gettingThereSection(summary, transit, loading, handlers) {
   const start = summary.line[0];
+  const { journeys, journeysFor, journeysWalk, journeysError } = transit;
   const body = [];
 
   if (loading) {
     body.push(el('p', { class: 'hint', text: 'Ser etter kollektivforbindelser …' }));
+  } else if (journeysError) {
+    // «Fant ingen buss» og «fikk ikke spurt» er to helt ulike svar.
+    body.push(
+      el('p', { class: 'hint', text: 'Fikk ikke kontakt med Entur akkurat nå, så jeg vet ikke hvordan du kommer deg hit kollektivt.' }),
+      el('button', { class: 'btn', type: 'button', text: '↻ Prøv igjen', onclick: handlers.onFindWayThere }),
+    );
   } else if (journeys?.length) {
+    // Fant vi bare noe på et annet tidspunkt, må det stå tydelig.
+    const annenDag = journeysFor && journeysFor.toDateString() !== new Date().toDateString();
+    if (annenDag) {
+      body.push(
+        el('p', { class: 'hint', text: `Ingen avganger rundt starttidspunktet. Dette er det første jeg finner – ${formatDay(journeysFor)}.` }),
+      );
+    }
     body.push(
       el('ul', { class: 'journeys' },
         journeys.slice(0, 3).map((journey) =>
@@ -800,8 +817,21 @@ function gettingThereSection(summary, journeys, loading, handlers) {
         '. Sjekk avgangen før du drar.',
       ]),
     );
+  } else if (journeys && journeysWalk != null && journeysWalk < WALKABLE_TO_START_M) {
+    /* Entur svarer tomt når man like gjerne kan gå. Da er «fant ingen buss»
+     * et rart svar – det riktige er hvor kort det er. */
+    body.push(
+      el('p', { class: 'ok-line', text: `Du er bare ${formatDistance(journeysWalk)} unna startpunktet i luftlinje. Her er det like greit å gå.` }),
+    );
   } else if (journeys) {
-    body.push(el('p', { class: 'hint', text: 'Fant ingen kollektivforbindelse hit akkurat nå.' }));
+    body.push(
+      el('p', { class: 'hint' }, [
+        journeysFor
+          ? `Entur finner ingen kollektivforbindelse hit – verken rundt starttidspunktet eller neste morgen. Mange fjellbusser går bare om sommeren, og noen steder kommer man ikke uten bil.`
+          : 'Entur finner ingen kollektivforbindelse hit akkurat nå.',
+      ]),
+      el('button', { class: 'btn', type: 'button', text: '↻ Søk på nytt', onclick: handlers.onFindWayThere }),
+    );
   } else {
     body.push(
       el('p', { class: 'hint', text: 'Slå på posisjon, så finner jeg kollektivforbindelser til startpunktet.' }),

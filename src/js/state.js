@@ -74,6 +74,10 @@ export const state = {
   hoveredCard: null,
   /** Kollektivreiser til startpunktet. */
   journeys: null,
+  /** Hva vi faktisk fikk vite om kollektivreisen, og for hvilket tidspunkt. */
+  journeysFor: null,
+  journeysWalk: null,
+  journeysError: false,
 
   /** Turmodus: posisjonen din målt mot ruta. */
   navigation: {

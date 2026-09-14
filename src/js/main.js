@@ -3,7 +3,7 @@
  */
 import { APP, BASEMAPS, DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
 import { $, debounce, formatDistance, render, store } from './util.js';
-import { closestPointOnPath, densify, pathLength, simplify } from './geo.js';
+import { haversine, closestPointOnPath, densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
 import { fetchElevations } from './api/hoydedata.js';
 import { fetchAvalancheWarning } from './api/varsom.js';
@@ -477,7 +477,12 @@ async function recompute(reason) {
     if (id !== generation) return;
   }
 
-  if (geometryChanged) S.state.journeys = null;
+  if (geometryChanged) {
+    S.state.journeys = null;
+    S.state.journeysFor = null;
+    S.state.journeysWalk = null;
+    S.state.journeysError = false;
+  }
 
   const { line, boundaries } = routeLineWithBoundaries();
   drawnBoundaries = boundaries;
@@ -655,6 +660,14 @@ async function loadPhotosAndArticle(summary, id) {
  * Finner kollektivforbindelser fra der du er til startpunktet.
  * Uten bil er det ofte dette som avgjør om turen blir noe av.
  */
+/** Neste morgen klokka åtte – der fjellbussene som regel går. */
+function nextMorning(from = new Date()) {
+  const morning = new Date(from);
+  morning.setDate(morning.getDate() + 1);
+  morning.setHours(8, 0, 0, 0);
+  return morning;
+}
+
 async function findWayToStart() {
   const summary = S.state.summary;
   if (!summary) return;
@@ -670,13 +683,39 @@ async function findWayToStart() {
   }
 
   const id = generation;
+  const start = summary.line[0];
   S.state.loading.journeys = true;
+  S.state.journeysError = false;
+  S.state.journeysWalk = haversine(myPosition, start);
   renderPane('turen');
+
   try {
-    S.state.journeys = await planJourney(myPosition, summary.line[0], { when: S.startDate() });
+    const when = S.startDate();
+    let found = await planJourney(myPosition, start, { when });
+    let forTime = when;
+    /*
+     * Fjellet har ofte én buss om dagen. Finner vi ingenting rundt
+     * starttidspunktet, er svaret «ikke da» – ikke «aldri». Vi ser derfor
+     * etter neste morgen før vi gir opp.
+     */
+    if (!found.length) {
+      const morning = nextMorning(when);
+      const later = await planJourney(myPosition, start, { when: morning });
+      if (later.length) {
+        found = later;
+        forTime = morning;
+      }
+    }
+    if (id !== generation) return;
+    S.state.journeys = found;
+    S.state.journeysFor = forTime;
   } catch (error) {
     console.warn('Entur feilet', error);
-    S.state.journeys = [];
+    // «Fant ingen buss» og «fikk ikke spurt» er to helt ulike svar.
+    if (id === generation) {
+      S.state.journeys = null;
+      S.state.journeysError = true;
+    }
   } finally {
     if (id === generation) {
       S.state.loading.journeys = false;
@@ -1144,6 +1183,9 @@ const PANES = {
         loading: S.state.loading,
         navigation: S.state.navigation,
         journeys: S.state.journeys,
+        journeysFor: S.state.journeysFor,
+        journeysWalk: S.state.journeysWalk,
+        journeysError: S.state.journeysError,
         checklist,
       },
       handlers,

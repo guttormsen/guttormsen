@@ -12,6 +12,14 @@ const ENDPOINT = 'https://api.entur.io/journey-planner/v3/graphql';
 /** Entur ber om et navn på formen «organisasjon-app». */
 const CLIENT_NAME = 'guttormsen-lykkeligtur';
 
+/*
+ * Ekspressbuss (coach) er det som faktisk går til fjellet – uten den fant
+ * Entur ingenting til Gjendesheim og liknende. Taubane og kabelbane tar deg
+ * opp til Fløyen og Ulriken.
+ *
+ * Merk: GraphQL kommenterer med #, ikke med skråstrek-stjerne. Et JavaScript-
+ * kommentartegn her inne gjør hele spørringen ugyldig.
+ */
 const QUERY = `
 query Reise($fraLat: Float!, $fraLon: Float!, $tilLat: Float!, $tilLon: Float!, $naar: DateTime) {
   trip(
@@ -25,10 +33,16 @@ query Reise($fraLat: Float!, $fraLon: Float!, $tilLat: Float!, $tilLon: Float!, 
       egressMode: foot
       transportModes: [
         { transportMode: bus }
+        { transportMode: coach }
         { transportMode: rail }
         { transportMode: tram }
         { transportMode: metro }
         { transportMode: water }
+        { transportMode: funicular }
+        { transportMode: cableway }
+        { transportMode: lift }
+        { transportMode: trolleybus }
+        { transportMode: monorail }
       ]
     }
   ) {
@@ -110,10 +124,16 @@ export async function planJourney(from, to, { when, signal } = {}) {
 export const MODES = {
   foot: { icon: '🚶', label: 'Gå' },
   bus: { icon: '🚌', label: 'Buss' },
+  coach: { icon: '🚍', label: 'Ekspressbuss' },
   rail: { icon: '🚆', label: 'Tog' },
   tram: { icon: '🚋', label: 'Trikk' },
   metro: { icon: '🚇', label: 'T-bane' },
   water: { icon: '⛴️', label: 'Båt' },
+  funicular: { icon: '🚞', label: 'Bane' },
+  cableway: { icon: '🚡', label: 'Taubane' },
+  lift: { icon: '🚡', label: 'Heis' },
+  trolleybus: { icon: '🚎', label: 'Trolleybuss' },
+  monorail: { icon: '🚝', label: 'Monorail' },
 };
 
 export const describeMode = (mode) => MODES[mode] ?? { icon: '•', label: mode };

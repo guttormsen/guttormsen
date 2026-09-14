@@ -27,6 +27,7 @@ ved første besøk etter navnebyttet.
 | **Hva finnes langs ruta** | Badeplass, bålplass, rasteplass, utsikt, hytte, toalett, lekeplass og buss til start – hentet fra OpenStreetMap og vist som merker på turkortet. Filtrer på dem for å finne turen som passer dagen. |
 | **Tilgjengelighet** | Fasiliteter merket som rullestolvennlige i OpenStreetMap vises med ♿, og kan filtreres på. Merket sier noe om toalettet, parkeringen eller rasteplassen – ikke om selve stien. |
 | **Om stedet** | Et kort utdrag fra norsk Wikipedia når artikkelen faktisk handler om turen – ikke bare tilfeldigvis ligger i nærheten. |
+| **Kom deg til start** | Kollektivreiser fra der du står til startpunktet, fra Entur – buss, ekspressbuss, tog, bane, båt, taubane og Fløibanen. Finner den ingenting rundt starttidspunktet, ser den etter neste morgen, for mange fjellbusser går én gang om dagen. Er startpunktet under 1,5 km unna, sier appen det i stedet for å lete etter buss. |
 | **Offline** | Last ned kartet langs ruta før du drar. Det ligger klart når dekningen tar slutt, og overlever at appen oppdateres. |
 | **Turdagbok** | Marker en tur som gått, så samler den seg opp med kilometer og høydemeter. Fjorten merker å samle, og sammenligninger som gjør tallene til noe man kjenner igjen: «du har klatret 1,4 × Galdhøpiggen». |
 | **Ekte kart** | Kartverkets topografiske kart, gråtonekart, turkart og sjøkart – det samme grunnlaget som norgeskart.no. |
@@ -343,7 +344,7 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   186 enhetstester
+test/                   192 enhetstester
 test/e2e/smoke.mjs      røyktest i Chromium, 92 sjekker mot ekte tjenester
 scripts/skjermbilder.mjs bilder av hver skjerm på telefonstørrelse
 ```

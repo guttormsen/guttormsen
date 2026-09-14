@@ -479,15 +479,23 @@ try {
     const start = window.lykkeligtur.state.summary.line[0];
     const from = { lat: start.lat - 0.03, lon: start.lon - 0.03 };
     try {
-      return (await planJourney(from, start)).length;
-    } catch {
-      return -1;
+      return { antall: (await planJourney(from, start)).length };
+    } catch (error) {
+      return { feil: String(error.message ?? error) };
     }
   });
-  if (journeys >= 0) {
-    check('kollektivreiser hentes fra Entur', journeys > 0, `${journeys} alternativer`);
-  } else {
+  /*
+   * En travel tjeneste er ikke vår feil, men en ugyldig spørring er det.
+   * Et JavaScript-kommentartegn inne i GraphQL-teksten gjorde en gang hele
+   * oppslaget ubrukelig, og det gjemte seg som «tjenesten er nede».
+   */
+  const ourFault = /syntax|validation|ANTLR|Unknown|Cannot query/i.test(journeys.feil ?? '');
+  if (journeys.feil && !ourFault) {
     skip('kollektivreiser hentes fra Entur', 'Entur svarte ikke');
+  } else if (journeys.feil) {
+    check('kollektivreiser hentes fra Entur', false, journeys.feil.slice(0, 90));
+  } else {
+    check('kollektivreiser hentes fra Entur', journeys.antall > 0, `${journeys.antall} alternativer`);
   }
 
   /* Turmodus med simulert posisjon */
