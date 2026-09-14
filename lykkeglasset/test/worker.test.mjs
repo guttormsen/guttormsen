@@ -28,6 +28,7 @@ class Setning {
 let db;
 let sendte;
 let endret;
+let filer;
 let env;
 
 const ekteFetch = globalThis.fetch;
@@ -37,8 +38,19 @@ beforeEach(() => {
   db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   sendte = [];
   endret = [];
+  filer = [];
+  ventende.length = 0;
   globalThis.fetch = async (url, valg) => {
     if (String(url).includes('api.telegram.org')) {
+      // Filer går som multipart, ikke JSON. De telles for seg.
+      if (valg.body instanceof FormData) {
+        filer.push({
+          metode: String(url).split('/').at(-1),
+          tekst: valg.body.get('caption'),
+          navn: [...valg.body.keys()],
+        });
+        return new Response('{"ok":true,"result":{}}', { status: 200 });
+      }
       const kropp = JSON.parse(valg.body);
       // Menyen skriver om meldinger i stedet for å sende nye. De to holdes
       // fra hverandre, ellers ville hver telling av «sendte» vært feil.
@@ -48,8 +60,15 @@ beforeEach(() => {
     }
     return ekteFetch(url, valg);
   };
+  // KV i minnet. Nok til å se at rett fil kommer ut igjen.
+  const lager = new Map();
   env = {
     DB: { prepare: (sql) => new Setning(db, sql) },
+    FILER: {
+      put: async (n, v) => { lager.set(n, v); },
+      get: async (n) => lager.get(n) ?? null,
+      delete: async (n) => { lager.delete(n); },
+    },
     ASSETS: { fetch: async () => new Response('skall') },
     KODE_LYKKE: 'lykke-kode',
     KODE_MATHIAS: 'mathias-kode',
@@ -69,10 +88,19 @@ beforeEach(() => {
 
 /* ---------- små hjelpere ---------- */
 
-const ctx = { waitUntil: (p) => p };
+/**
+ * Arbeid som legges i `waitUntil` skjer etter at svaret er sendt. Her samles
+ * det opp, og `roligNå()` venter til alt er ferdig – ellers ville en test
+ * målt et varsel som ikke var sendt ennå.
+ */
+const ventende = [];
+const ctx = { waitUntil: (p) => { ventende.push(p); return p; } };
+const roligNå = async () => {
+  while (ventende.length) await ventende.shift().catch(() => {});
+};
 
-const kall = (sti, { metode = 'GET', kropp, cookie } = {}) =>
-  worker.fetch(new Request(`https://test.local/api${sti}`, {
+const kall = async (sti, { metode = 'GET', kropp, cookie } = {}) => {
+  const svar = await worker.fetch(new Request(`https://test.local/api${sti}`, {
     method: metode,
     headers: {
       ...(kropp ? { 'Content-Type': 'application/json' } : {}),
@@ -81,6 +109,9 @@ const kall = (sti, { metode = 'GET', kropp, cookie } = {}) =>
     },
     body: kropp ? JSON.stringify(kropp) : undefined,
   }), env, ctx);
+  await roligNå();
+  return svar;
+};
 
 async function loggInn(hvem) {
   const svar = await kall('/logg-inn', {
@@ -92,6 +123,11 @@ async function loggInn(hvem) {
 }
 
 const alleMeldinger = () => sendte.map((s) => s.text).join('\n---\n');
+
+const kjørKlokka = async (hendelse) => {
+  await worker.scheduled(hendelse, env, ctx);
+  await roligNå();
+};
 
 /* ---------- tilgang ---------- */
 
@@ -376,20 +412,20 @@ const I_VINDUET = iDagKl('21:35');   // like etter PAMINNELSE_KL
 const FØR_VINDUET = iDagKl('19:05'); // godt før
 
 test('står dagen tom når klokka passerer, kommer påminnelsen stille', async () => {
-  await worker.scheduled({ scheduledTime: I_VINDUET }, env, ctx);
+  await kjørKlokka({ scheduledTime: I_VINDUET });
   assert.equal(sendte.length, 1);
   assert.equal(sendte[0].disable_notification, true);
   assert.ok(sendte[0].text.includes('Kveldsrunden står tom'));
 });
 
 test('påminnelsen kommer bare én gang samme kveld', async () => {
-  await worker.scheduled({ scheduledTime: I_VINDUET }, env, ctx);
-  await worker.scheduled({ scheduledTime: I_VINDUET + 600000 }, env, ctx);
+  await kjørKlokka({ scheduledTime: I_VINDUET });
+  await kjørKlokka({ scheduledTime: I_VINDUET + 600000 });
   assert.equal(sendte.length, 1);
 });
 
 test('før klokkeslettet skjer ingenting', async () => {
-  await worker.scheduled({ scheduledTime: FØR_VINDUET }, env, ctx);
+  await kjørKlokka({ scheduledTime: FØR_VINDUET });
   assert.deepEqual(sendte, []);
 });
 
@@ -397,7 +433,7 @@ test('er dagen ført, minnes det ikke på', async () => {
   const hennes = await loggInn('lykke');
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 4 } });
   sendte.length = 0;
-  await worker.scheduled({ scheduledTime: I_VINDUET }, env, ctx);
+  await kjørKlokka({ scheduledTime: I_VINDUET });
   assert.deepEqual(sendte, []);
 });
 
@@ -405,7 +441,7 @@ test('har det vært stille i flere dager, sies det fra', async () => {
   const femDagerSiden = flyttDag(dagsnokkel(new Date(), 'Europe/Oslo'), -5);
   db.prepare('INSERT INTO dager (dato, humor, gode_ting, skrevet_kl, endret_kl) VALUES (?, 4, ?, ?, ?)')
     .run(femDagerSiden, '[]', '', '');
-  await worker.scheduled({ scheduledTime: I_VINDUET }, env, ctx);
+  await kjørKlokka({ scheduledTime: I_VINDUET });
   const tekster = sendte.map((s) => s.text).join('\n');
   assert.ok(tekster.includes('5 dager siden'), tekster);
 });
@@ -504,12 +540,15 @@ test('«ring meg» går fortsatt med lyd i delt modus', async () => {
 const HEM = 'webhook-hemmelighet';
 const EIER = 4242;
 
-const oppdatering = (kropp, hemmelig = HEM) =>
-  worker.fetch(new Request('https://test.local/api/telegram', {
+const oppdatering = async (kropp, hemmelig = HEM) => {
+  const svar = await worker.fetch(new Request('https://test.local/api/telegram', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': hemmelig },
     body: JSON.stringify(kropp),
   }), env, ctx);
+  await roligNå();
+  return svar;
+};
 
 const fraEier = (tekst, ekstra = {}) => oppdatering({
   message: { from: { id: EIER }, chat: { id: -1, type: 'group' }, text: tekst, ...ekstra },
@@ -620,13 +659,13 @@ test('var i går tung, kommer puffet om morgenen – med knapper', async () => {
   });
   sendte.length = 0;
 
-  await worker.scheduled({ scheduledTime: iDagKl('08:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: iDagKl('08:10') });
   assert.equal(sendte.length, 1);
   assert.ok(sendte[0].text.includes('I går var tung'));
   assert.ok(sendte[0].text.includes('en klem'));
   assert.ok(sendte[0].reply_markup?.inline_keyboard?.length, 'skal ha svarknapper');
 
-  await worker.scheduled({ scheduledTime: iDagKl('08:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: iDagKl('08:10') });
   assert.equal(sendte.length, 1, 'bare én gang');
 });
 
@@ -635,7 +674,7 @@ test('en grei gårsdag gir ingen morgenpuff', async () => {
   const idag = dagsnokkel(new Date(), 'Europe/Oslo');
   await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -1), humor: 4 } });
   sendte.length = 0;
-  await worker.scheduled({ scheduledTime: iDagKl('08:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: iDagKl('08:10') });
   assert.deepEqual(sendte, []);
 });
 
@@ -644,7 +683,7 @@ test('en privat gårsdag puffer ingen', async () => {
   const idag = dagsnokkel(new Date(), 'Europe/Oslo');
   await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -1), humor: 1, privat: true } });
   sendte.length = 0;
-  await worker.scheduled({ scheduledTime: iDagKl('08:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: iDagKl('08:10') });
   assert.deepEqual(sendte, []);
 });
 
@@ -671,7 +710,7 @@ test('søndag kveld kommer uka samlet', async () => {
   }
   sendte.length = 0;
 
-  await worker.scheduled({ scheduledTime: sondagKl('20:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: sondagKl('20:10') });
   const brev = sendte.filter((m) => m.text.includes('Uka hos Lykke'));
   assert.equal(brev.length, 1);
   assert.ok(brev[0].text.includes('3 dager ført'));
@@ -680,7 +719,7 @@ test('søndag kveld kommer uka samlet', async () => {
 
 test('en uke uten noe ført gir ikke noe brev', async () => {
   sendte.length = 0;
-  await worker.scheduled({ scheduledTime: sondagKl('20:10') }, env, ctx);
+  await kjørKlokka({ scheduledTime: sondagKl('20:10') });
   assert.deepEqual(sendte.filter((m) => m.text.includes('Uka hos Lykke')), []);
 });
 
@@ -1055,4 +1094,139 @@ test('ønskelista kan hukes av fra knappene', async () => {
 
   const etter = await (await kall('/tilstand', { cookie })).json();
   assert.equal(etter.onsker[0].gjort_av, 'mathias');
+});
+
+/* ---------- bilder og lyd ---------- */
+
+const PIKSEL = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 0xff, 0xd9]);
+
+const lastOppFil = async (cookie, { dato = '', slag = 'bilde', type = 'image/jpeg', data = PIKSEL } = {}) => {
+  const svar = await worker.fetch(new Request(`https://test.local/api/fil?dato=${dato}&slag=${slag}`, {
+    method: 'POST',
+    headers: { 'Content-Type': type, Cookie: cookie },
+    body: data,
+  }), env, ctx);
+  await roligNå();
+  return svar;
+};
+
+test('hun kan legge et bilde på dagen, og det følger med til Telegram', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4 } });
+  filer.length = 0;
+
+  const svar = await lastOppFil(cookie);
+  assert.equal(svar.status, 200);
+  const { id } = await svar.json();
+
+  assert.equal(filer.length, 1);
+  assert.equal(filer[0].metode, 'sendPhoto');
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.deepEqual(t.idag.filer.map((f) => f.slag), ['bilde']);
+
+  const hentet = await kall(`/fil/${id}`, { cookie });
+  assert.equal(hentet.status, 200);
+  assert.equal(hentet.headers.get('Content-Type'), 'image/jpeg');
+  assert.deepEqual(new Uint8Array(await hentet.arrayBuffer()), PIKSEL);
+});
+
+test('bilder på en privat dag går ingen steder, og han får dem ikke', async () => {
+  const hennes = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 2, privat: true } });
+  filer.length = 0;
+
+  const { id } = await (await lastOppFil(hennes)).json();
+  assert.deepEqual(filer, [], 'ingenting skal ut fra en privat dag');
+
+  const hans = await loggInn('mathias');
+  assert.equal((await kall(`/fil/${id}`, { cookie: hans })).status, 403);
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.deepEqual(t.idag.filer ?? [], []);
+});
+
+test('bare hun legger til og sletter', async () => {
+  const hennes = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 4 } });
+  const { id } = await (await lastOppFil(hennes)).json();
+
+  const hans = await loggInn('mathias');
+  assert.equal((await lastOppFil(hans)).status, 403);
+  assert.equal((await kall(`/fil/${id}`, { metode: 'DELETE', cookie: hans })).status, 403);
+
+  assert.equal((await kall(`/fil/${id}`, { metode: 'DELETE', cookie: hennes })).status, 200);
+  assert.equal((await kall(`/fil/${id}`, { cookie: hennes })).status, 404);
+});
+
+test('filtypen må være noe vi faktisk kan vise', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await lastOppFil(cookie, { type: 'application/zip' })).status, 415);
+  assert.equal((await lastOppFil(cookie, { slag: 'lyd', type: 'image/jpeg' })).status, 415);
+  assert.equal((await lastOppFil(cookie, { slag: 'lyd', type: 'audio/webm' })).status, 200);
+});
+
+test('tomme og altfor store filer avvises', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await lastOppFil(cookie, { data: new Uint8Array(0) })).status, 400);
+  assert.equal((await lastOppFil(cookie, { data: new Uint8Array(9 * 1024 * 1024) })).status, 413);
+});
+
+test('uten innlogging får ingen se en fil', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4 } });
+  const { id } = await (await lastOppFil(cookie)).json();
+  assert.equal((await kall(`/fil/${id}`)).status, 401);
+});
+
+/* ---------- eksport ---------- */
+
+test('eksporten har alt hennes, og bare det delte hos ham', async () => {
+  const hennes = await loggInn('lykke');
+  await kall('/dag', {
+    metode: 'POST', cookie: hennes,
+    kropp: { humor: 2, tungt: 'noe for meg selv', privat: true },
+  });
+  await kall('/onske', { metode: 'POST', cookie: hennes, kropp: { tekst: 'Kino' } });
+
+  const hennesFil = await (await kall('/eksport', { cookie: hennes })).json();
+  assert.equal(hennesFil.dager[0].tungt, 'noe for meg selv');
+  assert.equal(hennesFil.onsker.length, 1);
+
+  const hans = await loggInn('mathias');
+  const svar = await kall('/eksport', { cookie: hans });
+  assert.match(svar.headers.get('Content-Disposition'), /lykkeglasset-\d{4}-\d{2}-\d{2}\.json/);
+  const hansFil = await svar.json();
+  assert.equal(hansFil.dager[0].privat, true);
+  assert.ok(!JSON.stringify(hansFil).includes('noe for meg selv'));
+});
+
+test('eksporten røper ikke brev hun ikke har åpnet', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/brev', { metode: 'POST', cookie: hans, kropp: { tekst: 'Til en tung dag.' } });
+  const hennes = await loggInn('lykke');
+  const fil = await (await kall('/eksport', { cookie: hennes })).json();
+  assert.equal(fil.brev.length, 1);
+  assert.equal(fil.brev[0].tekst, undefined);
+});
+
+test('/eksport i boten sender fila som dokument', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  filer.length = 0;
+  await fraEier('/eksport');
+  assert.equal(filer.length, 1);
+  assert.equal(filer[0].metode, 'sendDocument');
+});
+
+test('han ser ikke engang at det ligger et bilde på en privat dag', async () => {
+  const hennes = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 3, privat: true } });
+  await lastOppFil(hennes);
+
+  const hans = await loggInn('mathias');
+  const via = await (await kall(`/dag?dato=${idag}`, { cookie: hans })).json();
+  assert.deepEqual(via.dag.filer, []);
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.deepEqual(t.idag.filer, []);
 });

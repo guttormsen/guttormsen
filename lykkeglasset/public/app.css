@@ -557,6 +557,52 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   to { opacity: 1; transform: none; }
 }
 
+/* ---------- bilder og lyd ---------- */
+
+.media { display: flex; flex-wrap: wrap; gap: .5rem; margin: .9rem 0 0; }
+.media figure {
+  position: relative;
+  margin: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  line-height: 0;
+  animation: popp .35s var(--sprett) backwards;
+}
+.media img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  display: block;
+  background: var(--flate-2);
+  /* Et bilde som ikke lastes skal se ut som en tom rute, ikke som tekst
+     som velter ut av kortet. */
+  font-size: .6rem;
+  line-height: 1.2;
+  color: var(--svak);
+  overflow: hidden;
+}
+.media figure button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  font-size: .9rem;
+  line-height: 1;
+}
+.media audio { width: 100%; min-width: 15rem; height: 38px; }
+.media .lyd { flex: 1 1 100%; display: flex; align-items: center; gap: .5rem; line-height: normal; }
+
+.medieknapper { display: flex; gap: .5rem; margin-top: .8rem; }
+.medieknapper button { flex: 1; min-height: 42px; font-size: .88rem; }
+.medieknapper button[data-tar-opp="ja"] { background: var(--rose); border-color: transparent; color: var(--aksent-tekst); }
+
 /* ---------- arkivet ---------- */
 
 .arkiv { display: flex; flex-direction: column; gap: .5rem; margin-top: .9rem; }

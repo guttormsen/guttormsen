@@ -37,6 +37,18 @@ CREATE TABLE IF NOT EXISTS onsker (
   gjort_av  TEXT
 );
 
+-- Bilder og lydklipp som hører til en dag. Selve fila ligger i KV; her står
+-- bare det som trengs for å finne den igjen og vite hva den er.
+CREATE TABLE IF NOT EXISTS filer (
+  id        TEXT PRIMARY KEY,
+  dato      TEXT NOT NULL,
+  slag      TEXT NOT NULL,             -- 'bilde' eller 'lyd'
+  type      TEXT NOT NULL,             -- MIME
+  storrelse INTEGER NOT NULL,
+  laget_kl  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS filer_dato ON filer (dato);
+
 -- Brev som legges inn på forhånd og åpnes på en dårlig dag.
 CREATE TABLE IF NOT EXISTS brev (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,

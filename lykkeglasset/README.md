@@ -62,6 +62,30 @@ blir hørt på. Alle andre får høflig ingenting.
 `/logginn` gir deg en engangslenke rett inn i appen, gyldig i et kvarter.
 Du trenger aldri taste koden din igjen.
 
+### Bilder og lyd
+
+Ett eller flere bilder per dag, og lydklipp for de dagene det er lettere å si
+noe enn å skrive det. Opptaksknappen finnes bare der nettleseren faktisk kan
+det – den er et tilbud, ikke et krav.
+
+Bildet krympes i nettleseren før det sendes: et telefonbilde er fem megabyte,
+og ingen skjerm her trenger mer enn halvannen tusen piksler. Filene ligger i
+Cloudflare KV, ikke R2 – R2 må skrus på med betalingskort, og ett bilde om
+dagen holder seg godt innenfor gratisgrensa på 1 GB.
+
+Legger hun et bilde på en delt dag, følger det med til Telegram. På en privat
+dag går det ingen steder – og han ser ikke engang at det ligger der, for en
+id er nok til å spørre etter fila.
+
+### Sikkerhetskopi
+
+**Oss → Sikkerhetskopi** laster ned alt som én JSON-fil, og `/eksport` i boten
+sender den samme fila i Telegram. Hans utgave har bare det som er delt, og
+brev hun ikke har åpnet er med som datoer uten tekst.
+
+Data man ikke kan få ut, er data man kan miste – og dette er det eneste
+eksemplaret som finnes.
+
 ### Koder som kan byttes
 
 Kodene starter som hemmeligheter hos Cloudflare, men de kan byttes inne i

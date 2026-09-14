@@ -215,6 +215,7 @@ export const MENY = [
   [['🫙 Glasset', 'meny:glasset'], ['📊 Status', 'meny:status']],
   [['✨ Ønskelista', 'meny:onsker'], ['💌 Brev', 'meny:brev']],
   [['🔑 Logg meg inn', 'meny:logginn'], ['🔗 Lenke til Lykke', 'meny:lenkelykke']],
+  [['⬇️ Eksporter alt', 'meny:eksport']],
 ];
 
 export const TILBAKE = [[['‹ Meny', 'meny:hjem']]];
@@ -227,6 +228,7 @@ export const MENYTEKST = [
   '  /brev <tekst> – brev til en dårlig dag',
   '  /onske <tekst> – på ønskelista',
   '  /kode <ny kode> – ny kode for Lykke',
+  '  /eksport – alt sammen som én fil',
 ].join('\n');
 
 /* ---------- ting hun gjør ---------- */

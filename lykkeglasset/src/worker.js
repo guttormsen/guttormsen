@@ -19,7 +19,7 @@ import {
   erAktiv, morgenPuff, ukesbrev, arsbok, dagsrapport, onskeliste, statuslinje,
   MENY, TILBAKE, MENYTEKST, HENDELSER,
 } from './varsler.js';
-import { sendTelegram, kvitterTrykk, byttUtKnapper, endreMelding } from './telegram.js';
+import { sendTelegram, sendFil, kvitterTrykk, byttUtKnapper, endreMelding } from './telegram.js';
 
 const LYKKE = 'lykke';
 const MATHIAS = 'mathias';
@@ -233,7 +233,7 @@ async function tilstandLykke(env) {
   return {
     hvem: LYKKE,
     dato: f.dato,
-    idag: dag,
+    idag: await medFiler(env, dag, true),
     // Hennes egen historikk er hennes egen: også de private dagene har farge.
     historikk: alle.map((d) => ({ dato: d.dato, humor: d.humor, privat: d.privat })),
     ifjor: alle.find((d) => d.dato === sammeDagIFjor(f.dato)) ?? null,
@@ -263,7 +263,7 @@ async function tilstandMathias(env) {
   return {
     hvem: MATHIAS,
     dato: f.dato,
-    idag: forHam(alle.find((d) => d.dato === f.dato) ?? null, delt),
+    idag: await medFiler(env, forHam(alle.find((d) => d.dato === f.dato) ?? null, delt), delt),
     siste: alle.slice(0, 14).map((d) => forHam(d, delt)),
     historikk: alle.map((d) => ({
       dato: d.dato,
@@ -379,6 +379,91 @@ async function arkiv(env, hvem, url) {
   return json({ treff: ut.slice(0, 400), antall: ut.length });
 }
 
+/* ---------- bilder og lyd ---------- */
+
+const MAKS_FIL = 8 * 1024 * 1024;
+const TYPER = {
+  bilde: ['image/jpeg', 'image/png', 'image/webp'],
+  lyd: ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac'],
+};
+
+/** Filene som hører til én eller flere dager. */
+async function filerFor(env, datoer) {
+  if (!datoer.length) return new Map();
+  const merker = datoer.map((_, i) => `?${i + 1}`).join(',');
+  const rader = await env.DB
+    .prepare(`SELECT id, dato, slag, type FROM filer WHERE dato IN (${merker}) ORDER BY laget_kl`)
+    .bind(...datoer).all();
+  const kart = new Map(datoer.map((d) => [d, []]));
+  for (const r of (rader.results ?? [])) kart.get(r.dato)?.push(r);
+  return kart;
+}
+
+/**
+ * Henger filene på en dag.
+ *
+ * På en privat dag får bare hun lista. At det ligger et bilde der er i seg
+ * selv noe hun ikke har delt – og en id er nok til å spørre etter det.
+ */
+async function medFiler(env, dag, egen) {
+  if (!dag) return dag;
+  if (!egen && dag.privat) return { ...dag, filer: [] };
+  const kart = await filerFor(env, [dag.dato]);
+  return { ...dag, filer: kart.get(dag.dato) ?? [] };
+}
+
+async function lagreFil(req, env, ctx, url) {
+  const dato = url.searchParams.get('dato') || idag(env);
+  const slag = url.searchParams.get('slag') === 'lyd' ? 'lyd' : 'bilde';
+  const type = (req.headers.get('Content-Type') ?? '').split(';')[0].trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
+  if (!TYPER[slag].includes(type)) return feil(`Ikke en fil vi kan ta imot: ${type}`, 415);
+
+  const data = await req.arrayBuffer();
+  if (!data.byteLength) return feil('Tom fil.', 400);
+  if (data.byteLength > MAKS_FIL) return feil('Fila er for stor. Maks 8 MB.', 413);
+
+  const id = crypto.randomUUID();
+  await env.FILER.put(`fil:${id}`, data, { metadata: { type, slag } });
+  await env.DB
+    .prepare('INSERT INTO filer (id, dato, slag, type, storrelse, laget_kl) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+    .bind(id, dato, slag, type, data.byteLength, nå()).run();
+
+  // Delte dager sender fila videre. En privat dag gjør det ikke.
+  const dag = await hentDag(env, dato);
+  if ((!dag || !dag.privat) || await erDelt(env)) {
+    const oppgave = slag === 'bilde'
+      ? sendFil(env, 'sendPhoto', 'photo', data, { navn: 'bilde.jpg', tekst: `📷 Fra Lykke – ${norskDato(dato)}` })
+      : sendFil(env, 'sendAudio', 'audio', data, { navn: 'lydklipp', tekst: `🎙 Fra Lykke – ${norskDato(dato)}` });
+    if (ctx?.waitUntil) ctx.waitUntil(oppgave);
+  }
+  return json({ id, dato, slag, type });
+}
+
+/** Alt som finnes, som én fil. Data man ikke kan få ut, kan man miste. */
+async function eksport(env, hvem) {
+  const delt = await erDelt(env);
+  const [dager, meldinger, onsker, brev, filer] = await Promise.all([
+    env.DB.prepare('SELECT * FROM dager ORDER BY dato').all(),
+    env.DB.prepare('SELECT * FROM meldinger ORDER BY id').all(),
+    env.DB.prepare('SELECT * FROM onsker ORDER BY id').all(),
+    env.DB.prepare('SELECT * FROM brev ORDER BY id').all(),
+    env.DB.prepare('SELECT id, dato, slag, type, storrelse FROM filer ORDER BY laget_kl').all(),
+  ]);
+
+  const alle = (dager.results ?? []).map(radTilDag);
+  return {
+    laget: nå(),
+    for: hvem,
+    dager: hvem === LYKKE ? alle : alle.map((d) => forHam(d, delt)),
+    meldinger: meldinger.results ?? [],
+    onsker: onsker.results ?? [],
+    brev: hvem === LYKKE ? (brev.results ?? []).map(({ tekst, ...r }) => r) : (brev.results ?? []),
+    filer: filer.results ?? [],
+  };
+}
+
 /* ---------- det boten kan fortelle ---------- */
 
 const tekstIdag = async (env) =>
@@ -440,6 +525,16 @@ async function tekstBrev(env) {
     'Hun får tilbud om ett når dagen er tung.',
     'Legg inn et nytt med «/brev <tekst>».',
   ].join('\n');
+}
+
+/** Hele lageret som én fil i Telegram. */
+async function sendEksport(env, chat) {
+  const data = new TextEncoder().encode(JSON.stringify(await eksport(env, MATHIAS), null, 2));
+  return sendFil(env, 'sendDocument', 'document', data, {
+    navn: `lykkeglasset-${idag(env)}.json`,
+    tekst: '⬇️ Alt som ligger i appen, akkurat nå.',
+    chat,
+  });
 }
 
 /** Én engangslenke, til ham eller til henne. */
@@ -554,6 +649,12 @@ async function fraTelegram(req, env, ctx, origin) {
       return json({ ok: true });
     }
 
+    if (data === 'meny:eksport') {
+      kvitter('Sender fila …');
+      ctx?.waitUntil?.(sendEksport(env, chat));
+      return json({ ok: true });
+    }
+
     if (data.startsWith('meny:')) {
       const skjerm = await menyskjerm(env, data.slice(5), origin);
       if (skjerm) ctx?.waitUntil?.(endreMelding(env, chat, melding_id, skjerm.tekst, skjerm.knapper));
@@ -598,6 +699,12 @@ async function fraTelegram(req, env, ctx, origin) {
     '/logginn lykke': 'lenkelykke',
     '/logginnlykke': 'lenkelykke',
   }[tekst];
+
+  if (tekst === '/eksport') {
+    if (ctx?.waitUntil) ctx.waitUntil(sendEksport(env, chat));
+    return json({ ok: true });
+  }
+
   if (snarvei) {
     const skjerm = await menyskjerm(env, snarvei, origin);
     const oppgave = sendTelegram(env, skjerm.tekst, { stille: true, chat, knapper: skjerm.knapper });
@@ -697,8 +804,6 @@ async function arsboka(env, hvem, url) {
 async function api(req, env, url, ctx) {
   const sti = url.pathname.replace(/^\/api/, '');
   const hvem = await lesToken(lesCookie(req, COOKIE), env.SESJON_HEMMELIG);
-  // Kroppen kan bare leses én gang. Den leses her, og sendes videre som data –
-  // ikke som en forespørsel andre kan prøve å lese om igjen.
 
   if (sti === '/logg-inn' && req.method === 'POST') return loggInn(req, env, ctx);
   if (sti === '/logg-ut') return json({ ok: true }, 200, { 'Set-Cookie': slettCookie() });
@@ -726,7 +831,11 @@ async function api(req, env, url, ctx) {
 
   if (!hvem) return feil('Ikke logget inn.', 401);
   const erLykke = hvem === LYKKE;
-  const kropp = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+  // Kroppen kan bare leses én gang, så den leses her og sendes videre som data.
+  // Men bare når den faktisk er JSON – et bilde skal leses som bytes, og en
+  // kropp som alt er spist, finnes ikke å lese om igjen.
+  const erJson = (req.headers.get('Content-Type') ?? '').includes('application/json');
+  const kropp = req.method === 'POST' && erJson ? await req.json().catch(() => ({})) : {};
   const tekstFra = (felt, maks) => String(kropp?.[felt] ?? '').trim().slice(0, maks);
 
   // Ting appen hennes sier fra om mens de skjer.
@@ -750,6 +859,41 @@ async function api(req, env, url, ctx) {
     return json(erLykke ? await tilstandLykke(env) : await tilstandMathias(env));
   }
   if (sti === '/glasset') return json(await trekkLapp(env));
+
+  if (sti === '/fil' && req.method === 'POST') {
+    if (!erLykke) return feil('Bare Lykke legger til bilder og lyd.', 403);
+    return lagreFil(req, env, ctx, url);
+  }
+
+  const fil = sti.match(/^\/fil\/([\w-]+)$/);
+  if (fil) {
+    const rad = await env.DB.prepare('SELECT * FROM filer WHERE id = ?1').bind(fil[1]).first();
+    if (!rad) return feil('Fant ikke fila.', 404);
+
+    if (req.method === 'DELETE') {
+      if (!erLykke) return feil('Ikke din å slette.', 403);
+      await env.FILER.delete(`fil:${rad.id}`);
+      await env.DB.prepare('DELETE FROM filer WHERE id = ?1').bind(rad.id).run();
+      return json({ ok: true });
+    }
+
+    // En privat dag har heller ingen bilder å vise fram.
+    if (!erLykke && !(await erDelt(env))) {
+      const dag = await hentDag(env, rad.dato);
+      if (dag?.privat) return feil('Ikke delt.', 403);
+    }
+    const data = await env.FILER.get(`fil:${rad.id}`, 'arrayBuffer');
+    if (!data) return feil('Fila er borte.', 404);
+    return new Response(data, {
+      headers: { 'Content-Type': rad.type, 'Cache-Control': 'private, max-age=31536000' },
+    });
+  }
+
+  if (sti === '/eksport') {
+    return json(await eksport(env, hvem), 200, {
+      'Content-Disposition': `attachment; filename="lykkeglasset-${idag(env)}.json"`,
+    });
+  }
   if (sti === '/arkiv') return arkiv(env, hvem, url);
 
   /**
@@ -793,7 +937,7 @@ async function api(req, env, url, ctx) {
     const dato = url.searchParams.get('dato') ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
     const dag = await hentDag(env, dato);
-    return json({ dag: erLykke ? dag : forHam(dag, await erDelt(env)) });
+    return json({ dag: await medFiler(env, erLykke ? dag : forHam(dag, await erDelt(env)), erLykke || await erDelt(env)) });
   }
 
   if (sti === '/dag' && req.method === 'POST') {

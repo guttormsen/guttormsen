@@ -21,6 +21,12 @@ database_name = "lykkeglasset"
 # Fylles inn av `npm run db:opprett`.
 database_id = "66cbb8e7-9245-428a-8ef9-5830a1b5116f"
 
+# Bilder og lydklipp. KV i stedet for R2, fordi R2 må skrus på med kort –
+# og et bilde per dag holder seg godt innenfor gratisgrensa på 1 GB.
+[[kv_namespaces]]
+binding = "FILER"
+id = "31601d0fbb234b41a5f4225d8b0af012"
+
 [vars]
 # Telegram-gruppa varslene går til. Ingen hemmelighet – uten token er den ubrukelig.
 TELEGRAM_CHAT_ID = "-5144581203"

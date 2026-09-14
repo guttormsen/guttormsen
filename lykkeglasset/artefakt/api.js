@@ -20,6 +20,10 @@ import { dagsnokkel, sisteDager, sammeDagIFjor, dagerMellom, norskDato } from '.
 import { BEHOV, ryddDag } from './varsler.js';
 
 export const VARSLER = false;
+/** Ingen server, ingen filplass. Appen skjuler knappene i stedet for å love noe. */
+export const KAN_FILER = false;
+export const lastOpp = async () => { throw new Error('Bilder og lyd finnes bare i utgaven med server.'); };
+export const hentFil = async () => { throw new Error('Eksport finnes bare i utgaven med server.'); };
 
 const SONE = 'Europe/Oslo';
 const LYKKE = 'lykke';

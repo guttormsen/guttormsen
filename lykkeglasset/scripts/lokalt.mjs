@@ -8,7 +8,7 @@
  * Det er nok til å se hvordan appen kjennes ut før noe legges ut.
  */
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -45,8 +45,24 @@ const TYPER = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+// Bilder og lyd. Filer på disk her, KV i skyen – samme tre metodene.
+const FILROT = join(ROT, '.wrangler', 'filer');
+mkdirSync(FILROT, { recursive: true });
+const filsti = (navn) => join(FILROT, navn.replaceAll(':', '_'));
+
 const env = {
   DB: { prepare: (sql) => new Setning(sql) },
+  FILER: {
+    async put(navn, data) { writeFileSync(filsti(navn), Buffer.from(data)); },
+    async get(navn) {
+      if (!existsSync(filsti(navn))) return null;
+      // `.buffer` på en Node-buffer er hele den delte minneblokka, ikke fila.
+      // Uten dette snittet sendes naboens bytes med.
+      const b = readFileSync(filsti(navn));
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+    },
+    async delete(navn) { if (existsSync(filsti(navn))) rmSync(filsti(navn)); },
+  },
   ASSETS: {
     async fetch(req) {
       const sti = new URL(req.url).pathname;

@@ -82,6 +82,33 @@ export const endreMelding = (env, chat, melding, tekst, knapper) =>
     ...(knapper?.length ? { reply_markup: tastatur(knapper) } : {}),
   });
 
+/**
+ * Sender en fil. Telegram vil ha multipart, ikke JSON, så denne går utenom
+ * `kall()`.
+ *
+ * @param {'sendPhoto'|'sendAudio'|'sendDocument'} metode
+ */
+export async function sendFil(env, metode, felt, fil, { navn, tekst, stille = true, chat = null } = {}) {
+  if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT_ID) return false;
+  try {
+    const skjema = new FormData();
+    skjema.set('chat_id', String(chat ?? env.TELEGRAM_CHAT_ID));
+    skjema.set('disable_notification', String(stille));
+    if (tekst) skjema.set('caption', tekst);
+    skjema.set(felt, new Blob([fil]), navn);
+
+    const svar = await fetch(api(env, metode), { method: 'POST', body: skjema });
+    if (!svar.ok) {
+      console.warn('Telegram svarte', svar.status, await svar.text());
+      return false;
+    }
+    return true;
+  } catch (feil) {
+    console.warn('Fikk ikke sendt fila:', feil?.message ?? feil);
+    return false;
+  }
+}
+
 /** Sier fra til Telegram hvor svarene skal sendes. Kjøres av oppsettskriptet. */
 export const settWebhook = (env, url, hemmelig) =>
   kall(env, 'setWebhook', {

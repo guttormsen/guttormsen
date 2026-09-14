@@ -7,7 +7,7 @@
  * Fila kjenner ikke til hvor dataene kommer fra. Alt går gjennom `api()` i
  * api.js, og den kan byttes ut uten at noe her endres.
  */
-import { api, VARSLER } from './api.js';
+import { api, lastOpp, hentFil, VARSLER, KAN_FILER } from './api.js';
 
 /* ---------- små hjelpere ---------- */
 
@@ -430,7 +430,115 @@ function dagsKort(dag, { egen }) {
     dag.holdt_gode && el('p', { class: 'liten svak', text: 'De gode tingene beholdt hun for seg selv.' }),
     dag.tungt && el('p', { class: 'sendes', style: 'margin-top:.7rem', text: dag.tungt }),
     dag.holdt_tungt && el('p', { class: 'liten svak', style: 'margin-top:.7rem', text: 'Noe var tungt. Det er ikke delt.' }),
+    mediekort(dag, { egen }),
   ]);
+}
+
+/* ---------- bilder og lyd ---------- */
+
+/**
+ * Krymper bildet før det sendes.
+ *
+ * Et telefonbilde er fire megapiksler og fem megabyte. På skjermen her er det
+ * en firkant på hundre piksler, og i årsboka er det et minne – ingen av
+ * delene trenger mer enn halvannen tusen piksler.
+ */
+async function krympBilde(fil, maks = 1600) {
+  const kilde = await createImageBitmap(fil);
+  const skala = Math.min(1, maks / Math.max(kilde.width, kilde.height));
+  const b = Math.round(kilde.width * skala);
+  const h = Math.round(kilde.height * skala);
+  const lerret = new OffscreenCanvas(b, h);
+  lerret.getContext('2d').drawImage(kilde, 0, 0, b, h);
+  kilde.close?.();
+  return lerret.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+}
+
+/** Bildene og lydklippene som hører til en dag, med knapper for å legge til. */
+function mediekort(dag, { egen }) {
+  if (!KAN_FILER || !dag) return null;
+  const filer = dag.filer ?? [];
+  if (!filer.length && !egen) return null;
+
+  const rute = el('div', { class: 'media' }, filer.map((f) => (f.slag === 'lyd'
+    ? el('div', { class: 'lyd' }, [
+      el('audio', { controls: true, src: `/api/fil/${f.id}`, preload: 'none' }),
+      egen && el('button', {
+        class: 'blank', type: 'button', text: '×', 'aria-label': 'Slett lydklippet',
+        onclick: () => slett(f.id),
+      }),
+    ])
+    : el('figure', {}, [
+      el('img', { src: `/api/fil/${f.id}`, alt: `Bilde fra ${datoOrd(dag.dato)}`, loading: 'lazy' }),
+      egen && el('button', { type: 'button', text: '×', 'aria-label': 'Slett bildet', onclick: () => slett(f.id) }),
+    ]))));
+
+  async function slett(id) {
+    try { await api(`/fil/${id}`, { metode: 'DELETE' }); await start(); }
+    catch (e) { si(e.message); }
+  }
+
+  if (!egen) return rute;
+
+  const velger = el('input', {
+    type: 'file', accept: 'image/*', id: 'bildevelger', style: 'display:none',
+    onchange: async (e) => {
+      const fil = e.target.files?.[0];
+      e.target.value = '';
+      if (!fil) return;
+      si('Laster opp …');
+      try {
+        const liten = await krympBilde(fil);
+        await lastOpp(`/fil?dato=${dag.dato}&slag=bilde`, liten, 'image/jpeg');
+        await start();
+      } catch (feil) { si(feil.message); }
+    },
+  });
+
+  const knapper = [
+    el('button', {
+      type: 'button', text: '📷 Legg til bilde',
+      onclick: () => velger.click(),
+    }),
+  ];
+
+  // Opptak er valgfritt: knappen finnes bare der nettleseren faktisk kan det.
+  if (navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+    let opptaker = null;
+    const knapp = el('button', {
+      type: 'button', text: '🎙 Ta opp',
+      onclick: async () => {
+        if (opptaker) { opptaker.stop(); return; }
+        try {
+          const strøm = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const biter = [];
+          opptaker = new MediaRecorder(strøm);
+          opptaker.ondataavailable = (e) => biter.push(e.data);
+          opptaker.onstop = async () => {
+            for (const spor of strøm.getTracks()) spor.stop();
+            knapp.dataset.tarOpp = 'nei';
+            knapp.textContent = '🎙 Ta opp';
+            opptaker = null;
+            const lyd = new Blob(biter, { type: biter[0]?.type || 'audio/webm' });
+            if (lyd.size < 1200) return si('For kort til å bli noe.');
+            si('Laster opp …');
+            try {
+              await lastOpp(`/fil?dato=${dag.dato}&slag=lyd`, lyd, lyd.type.split(';')[0]);
+              await start();
+            } catch (feil) { si(feil.message); }
+          };
+          opptaker.start();
+          knapp.dataset.tarOpp = 'ja';
+          knapp.textContent = '⏹ Stopp';
+        } catch {
+          si('Fikk ikke tilgang til mikrofonen.');
+        }
+      },
+    });
+    knapper.push(knapp);
+  }
+
+  return el('div', {}, [rute, velger, el('div', { class: 'medieknapper' }, knapper)]);
 }
 
 /* ---------- fanene ---------- */
@@ -498,6 +606,7 @@ function faneIdag(t) {
         el('p', { class: 'stempel', text: `Ført ${klokkeslett(dag.skrevet_kl)}${dag.privat ? ' · bare for deg' : ''}` }),
         el('h2', { style: 'margin-top:.45rem', text: `${humorFjes(dag.humor)} ${humorOrd(dag.humor)}` }),
         dag.gode_ting.length && godeTingListe(dag.gode_ting),
+        mediekort(dag, { egen: true }),
         el('button', {
           class: 'blank liten-knapp', type: 'button', style: 'margin-top:.5rem',
           onclick: () => kveldsrunden(t, start),
@@ -597,6 +706,7 @@ function faneIdag(t) {
           dag.holdt_gode && el('p', { class: 'liten svak', text: 'De gode tingene beholdt hun for seg selv.' }),
           dag.tungt && el('p', { class: 'sendes', style: 'margin-top:.7rem', text: dag.tungt }),
           dag.holdt_tungt && el('p', { class: 'liten svak', style: 'margin-top:.7rem', text: 'Noe var tungt. Hun valgte å ikke dele det.' }),
+          mediekort(dag, { egen: false }),
         ]
       : [
         el('p', { class: 'stempel', text: 'I dag' }),
@@ -1000,6 +1110,7 @@ function faneOss(t) {
     ]),
 
     delingKort(t),
+    eksportKort(),
     kodeKort(t),
   );
 }
@@ -1050,6 +1161,30 @@ function delingKort(t) {
       text: t.delt
         ? 'Alt du fører går til Mathias. «Bare for meg» finnes ikke så lenge dette står på.'
         : 'Hver kveld velger du om dagen deles. De du holder for deg selv, ser han bare at finnes.',
+    }),
+  ]);
+}
+
+/** Alt som ligger her, som én fil. Data man ikke kan få ut, kan man miste. */
+function eksportKort() {
+  if (!KAN_FILER) return null;
+  return el('div', { class: 'kort' }, [
+    el('p', { class: 'stempel', text: 'Sikkerhetskopi' }),
+    el('p', { class: 'svak liten', style: 'margin:.5rem 0 .8rem', text: 'Alt som ligger her, som én fil. Legg den et trygt sted.' }),
+    el('button', {
+      class: 'hoved', type: 'button', text: '⬇️ Last ned alt',
+      onclick: async () => {
+        try {
+          const svar = await hentFil('/eksport');
+          if (!svar.ok) throw new Error('Fikk ikke hentet fila.');
+          const url = URL.createObjectURL(await svar.blob());
+          const lenke = el('a', { href: url, download: `lykkeglasset-${new Date().toISOString().slice(0, 10)}.json` });
+          document.body.append(lenke);
+          lenke.click();
+          lenke.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } catch (e) { si(e.message); }
+      },
     }),
   ]);
 }
