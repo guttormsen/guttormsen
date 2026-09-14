@@ -1,97 +1,178 @@
-/* Lykkeglasset. Ett stilark, lys og mørk modus, mobil først. */
+/*
+ * Lykkeglasset.
+ *
+ * Ett stilark, lys og mørk modus, mobil først. Fargene er varme med vilje –
+ * dette er en app man åpner om kvelden, ikke et skjema på jobb.
+ *
+ * All bevegelse deler den samme kurva og de samme to varighetene, og alt av
+ * den slås av under `prefers-reduced-motion`. Ingenting som beveger seg får
+ * stå i veien for noe man venter på.
+ */
 
 :root {
-  --bg: #fdf8f3;
-  --flate: #ffffff;
-  --flate-2: #f4ece3;
-  --tekst: #2b2320;
-  --svak: #7a6a60;
-  --kant: #e6d9cc;
-  --aksent: #b4593c;
-  --aksent-tekst: #ffffff;
-  --god: #2f7d5d;
-  --skygge: 0 1px 2px rgba(43, 35, 32, .06), 0 8px 24px rgba(43, 35, 32, .06);
-  --runding: 16px;
-  --h1: 4;
+  --bg: #fbf6ef;
+  --bg-2: #f4e9db;
+  --flate: #fffdfa;
+  --flate-2: #f4ebe0;
+  --tekst: #2a211b;
+  --svak: #7d6a5c;
+  --kant: #eaddcc;
+  --kant-sterk: #ddcab3;
+  --aksent: #b3543a;
+  --aksent-myk: #f0dbcf;
+  --aksent-tekst: #fffdfa;
+  --glass-kant: #c9b59a;
+  --glass-inni: #fdf6ea;
+  --lokk: #d9a441;
+
+  --skygge: 0 1px 1px rgba(60, 42, 30, .04), 0 6px 16px -8px rgba(60, 42, 30, .16);
+  --skygge-hev: 0 2px 4px rgba(60, 42, 30, .06), 0 14px 28px -12px rgba(60, 42, 30, .22);
+
+  --runding: 20px;
+  --kurve: cubic-bezier(.22, .8, .24, 1);
+  --rask: .18s;
+  --rolig: .44s;
+
+  --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17130f;
-    --flate: #221c17;
-    --flate-2: #2c241d;
-    --tekst: #f2e9e0;
-    --svak: #a7968a;
-    --kant: #3a2f26;
-    --aksent: #e08a6a;
+    --bg: #15110d;
+    --bg-2: #1d1712;
+    --flate: #221b15;
+    --flate-2: #2b231b;
+    --tekst: #f3e9dd;
+    --svak: #a6927f;
+    --kant: #372d23;
+    --kant-sterk: #4a3d30;
+    --aksent: #e3906d;
+    --aksent-myk: #3a2a22;
     --aksent-tekst: #1a1410;
-    --god: #6fc39a;
-    --skygge: none;
+    --glass-kant: #6f5c47;
+    --glass-inni: #241d16;
+    --lokk: #c79437;
+
+    --skygge: 0 1px 2px rgba(0, 0, 0, .3);
+    --skygge-hev: 0 8px 24px -10px rgba(0, 0, 0, .6);
   }
 }
 
 * { box-sizing: border-box; }
 
+/* Litt lys øverst, litt mer mettet nederst. Overgangen ligger på <html> og er
+   festet til vinduet: da vandrer den ikke når siden rulles, og den slipper
+   heller ikke opp der innholdet er kortere enn skjermen. */
+html {
+  min-height: 100%;
+  background: var(--bg) linear-gradient(175deg, var(--bg) 0%, var(--bg-2) 100%) no-repeat fixed;
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100dvh;
   color: var(--tekst);
-  font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.55 var(--sans);
   -webkit-text-size-adjust: 100%;
 }
 
 #app {
   max-width: 34rem;
   margin: 0 auto;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem
-           calc(2.5rem + env(safe-area-inset-bottom));
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem
+           calc(3rem + env(safe-area-inset-bottom));
 }
 
-h1, h2, h3 { line-height: 1.2; margin: 0 0 .4rem; font-weight: 650; }
-h1 { font-size: 1.6rem; letter-spacing: -.01em; }
-h2 { font-size: 1.15rem; }
-h3 { font-size: .95rem; }
+/* ---------- typografi ---------- */
+
+h1, h2, h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0 0 .35rem;
+  letter-spacing: -.01em;
+}
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
 p { margin: 0 0 .7rem; }
 .svak { color: var(--svak); }
-.liten { font-size: .85rem; }
+.liten { font-size: .86rem; line-height: 1.45; }
 .midt { text-align: center; }
-.laster { padding: 4rem 1rem; text-align: center; color: var(--svak); }
 
-/* ---------- byggeklosser ---------- */
+.stempel {
+  font-size: .72rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--svak);
+  font-family: var(--sans);
+}
+
+.laster { padding: 5rem 1rem; text-align: center; color: var(--svak); }
+
+/* ---------- kort ---------- */
 
 .kort {
   background: var(--flate);
   border: 1px solid var(--kant);
   border-radius: var(--runding);
-  padding: 1rem;
-  margin: 0 0 1rem;
+  padding: 1.15rem;
+  margin: 0 0 .9rem;
   box-shadow: var(--skygge);
 }
 .kort > :last-child { margin-bottom: 0; }
+
+/* Kortene legger seg inn etter hverandre, ikke alle på én gang. `--i` settes
+   i JS; uten den starter alle med én gang, og det er også greit. */
+.kort, .topp, .portal {
+  animation: stig var(--rolig) var(--kurve) backwards;
+  /* Taket gjør at det åttende kortet ikke venter et halvt sekund lenger enn
+     det første. Trappa skal antydes, ikke telles. */
+  animation-delay: calc(min(var(--i, 0), 5) * 45ms);
+}
+
+/* Inne i kveldsrunden gjør steget bevegelsen. To lag oppå hverandre blir uro. */
+.steg .kort { animation: none; }
+
+@keyframes stig {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
 
 .topp {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: .5rem;
-  margin-bottom: 1.2rem;
+  gap: .75rem;
+  margin-bottom: 1.4rem;
 }
+
+/* ---------- knapper ---------- */
 
 button {
   font: inherit;
+  font-family: var(--sans);
   cursor: pointer;
-  border-radius: 12px;
-  border: 1px solid var(--kant);
+  border-radius: 14px;
+  border: 1px solid var(--kant-sterk);
   background: var(--flate-2);
   color: var(--tekst);
   padding: .7rem 1rem;
-  min-height: 46px;
+  min-height: 48px;
+  transition: transform var(--rask) var(--kurve),
+              background-color var(--rask) var(--kurve),
+              border-color var(--rask) var(--kurve),
+              box-shadow var(--rask) var(--kurve);
 }
-button:active { transform: translateY(1px); }
-button:focus-visible, input:focus-visible, textarea:focus-visible {
+button:active { transform: scale(.975); }
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--aksent);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .hoved {
@@ -100,126 +181,260 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   color: var(--aksent-tekst);
   font-weight: 600;
   width: 100%;
-  min-height: 52px;
+  min-height: 54px;
+  box-shadow: var(--skygge);
 }
-.blank { background: none; border-color: transparent; color: var(--svak); }
-.rad { display: flex; gap: .5rem; flex-wrap: wrap; }
-.rad > * { flex: 1 1 auto; }
+.hoved:hover { box-shadow: var(--skygge-hev); }
+.hoved[disabled] { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.hoved[disabled]:active { transform: none; }
 
-input[type="text"], input[type="password"], textarea {
+.blank {
+  background: none;
+  border-color: transparent;
+  color: var(--svak);
+  box-shadow: none;
+}
+.blank:hover { color: var(--tekst); background: var(--flate-2); }
+
+.rad { display: flex; gap: .5rem; flex-wrap: wrap; }
+.rad > * { flex: 1 1 8rem; }
+
+/* ---------- skjemafelt ---------- */
+
+input[type="text"],
+input[type="password"],
+textarea {
   font: inherit;
+  font-family: var(--sans);
   width: 100%;
   color: var(--tekst);
   background: var(--flate-2);
   border: 1px solid var(--kant);
-  border-radius: 12px;
-  padding: .7rem .8rem;
-  min-height: 46px;
+  border-radius: 14px;
+  padding: .75rem .85rem;
+  min-height: 48px;
+  transition: border-color var(--rask) var(--kurve), background-color var(--rask) var(--kurve);
 }
-textarea { min-height: 7rem; resize: vertical; }
-label { display: block; font-size: .9rem; color: var(--svak); margin: 0 0 .3rem; }
+input:focus, textarea:focus { border-color: var(--kant-sterk); background: var(--flate); }
+textarea { min-height: 7.5rem; resize: vertical; line-height: 1.5; }
+label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35rem; }
 
-/* ---------- humørvalg ---------- */
+/* ---------- humørvalget ---------- */
 
 .humor { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
 .humor button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .25rem;
-  padding: .7rem .2rem;
-  font-size: 1.5rem;
+  gap: .3rem;
+  padding: .85rem .2rem;
+  font-size: 1.6rem;
   line-height: 1;
+  min-height: 84px;
 }
-.humor button span { font-size: .62rem; color: var(--svak); line-height: 1.1; text-align: center; }
+.humor button span {
+  font-size: .62rem;
+  color: var(--svak);
+  line-height: 1.15;
+  text-align: center;
+}
 .humor button[aria-pressed="true"] {
-  border-color: var(--aksent);
-  background: color-mix(in srgb, var(--aksent) 14%, var(--flate));
+  border-color: var(--h);
+  background: color-mix(in srgb, var(--h) 16%, var(--flate));
+  transform: translateY(-3px);
+  box-shadow: var(--skygge-hev);
 }
+.humor button[aria-pressed="true"] span { color: var(--tekst); }
+.humor button[data-verdi="1"] { --h: #5b6b85; }
+.humor button[data-verdi="2"] { --h: #7f8398; }
+.humor button[data-verdi="3"] { --h: #a89b8c; }
+.humor button[data-verdi="4"] { --h: #cf9a4e; }
+.humor button[data-verdi="5"] { --h: #e0a83c; }
 
 /* ---------- brikker ---------- */
 
-.brikker { display: flex; flex-wrap: wrap; gap: .4rem; }
-.brikker button { flex: 0 1 auto; padding: .5rem .8rem; border-radius: 999px; font-size: .9rem; min-height: 40px; }
+.brikker { display: flex; flex-wrap: wrap; gap: .45rem; }
+.brikker button {
+  flex: 0 1 auto;
+  padding: .55rem .9rem;
+  border-radius: 999px;
+  font-size: .9rem;
+  min-height: 42px;
+}
 .brikker button[aria-pressed="true"] {
   background: var(--aksent);
   border-color: transparent;
   color: var(--aksent-tekst);
 }
 
-/* ---------- prikker ---------- */
+/* ---------- dagene som prikker ---------- */
 
-.prikker { display: flex; flex-wrap: wrap; gap: 4px; }
-.prikk {
-  width: 13px; height: 13px; border-radius: 4px;
+.dager { display: flex; flex-wrap: wrap; gap: 5px; }
+.dag {
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
   background: var(--flate-2);
   border: 1px solid var(--kant);
+  animation: popp .3s var(--kurve) backwards;
+  animation-delay: calc(var(--i, 0) * 14ms);
 }
-.prikk[data-humor="1"] { background: #5b6b85; border-color: transparent; }
-.prikk[data-humor="2"] { background: #7f8398; border-color: transparent; }
-.prikk[data-humor="3"] { background: #a89b8c; border-color: transparent; }
-.prikk[data-humor="4"] { background: #cf9a4e; border-color: transparent; }
-.prikk[data-humor="5"] { background: #e8b33c; border-color: transparent; }
-.prikk[data-privat="ja"] {
-  background: repeating-linear-gradient(45deg, var(--kant) 0 3px, transparent 3px 6px);
+.dag[data-humor="1"] { background: #5b6b85; border-color: transparent; }
+.dag[data-humor="2"] { background: #7f8398; border-color: transparent; }
+.dag[data-humor="3"] { background: #a89b8c; border-color: transparent; }
+.dag[data-humor="4"] { background: #cf9a4e; border-color: transparent; }
+.dag[data-humor="5"] { background: #e0a83c; border-color: transparent; }
+.dag[data-privat="ja"] {
+  background: repeating-linear-gradient(45deg, var(--kant-sterk) 0 3px, transparent 3px 6px);
+}
+.dag[data-idag="ja"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--aksent); }
+
+@keyframes popp {
+  from { opacity: 0; transform: scale(.4); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- glasset ---------- */
+
+.glass-rad { display: flex; align-items: center; gap: 1.1rem; }
+.glass { flex: none; width: 82px; height: auto; overflow: visible; }
+.glass .innhold circle {
+  animation: popp .45s var(--kurve) backwards;
+  animation-delay: calc(.25s + var(--i, 0) * 45ms);
+}
+
+/* Lappen kommer opp av glasset. */
+.lapp {
+  background: var(--glass-inni);
+  border: 1px solid var(--kant-sterk);
+  border-radius: 14px;
+  padding: .9rem 1rem;
+  margin-top: .9rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  animation: trekk .5s var(--kurve);
+}
+.lapp .når { display: block; margin-top: .45rem; font: .8rem/1 var(--sans); color: var(--svak); }
+
+@keyframes trekk {
+  from { opacity: 0; transform: translateY(22px) rotate(-2.5deg) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- brev ---------- */
+
+.brev-apen {
+  animation: brevAapner .55s var(--kurve);
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@keyframes brevAapner {
+  from { opacity: 0; transform: scale(.94) rotate(-1.5deg); }
+  to { opacity: 1; transform: none; }
 }
 
 /* ---------- avkryssing ---------- */
 
-.hake { display: flex; align-items: flex-start; gap: .6rem; margin: .5rem 0; cursor: pointer; }
-.hake input { width: 22px; height: 22px; margin: 0; accent-color: var(--aksent); flex: none; }
-.hake span { font-size: .9rem; color: var(--tekst); }
+.hake { display: flex; align-items: flex-start; gap: .65rem; margin: .55rem 0; cursor: pointer; }
+.hake input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--aksent); flex: none; }
+/* Ligger inni en <label>, som er grå. Selve teksten skal være lesbar. */
+.hake span { font-size: .92rem; color: var(--tekst); }
+.hake input:disabled + span { color: var(--svak); }
 
 /* ---------- forhåndsvisning av det som sendes ---------- */
 
 .sendes {
   background: var(--flate-2);
-  border: 1px dashed var(--kant);
-  border-radius: 12px;
-  padding: .8rem;
+  border: 1px dashed var(--kant-sterk);
+  border-radius: 14px;
+  padding: .9rem;
   font-size: .92rem;
+  line-height: 1.5;
   white-space: pre-wrap;
 }
 
 /* ---------- lister ---------- */
 
 .liste { list-style: none; margin: 0; padding: 0; }
-.liste li {
-  padding: .6rem 0;
-  border-top: 1px solid var(--kant);
-  font-size: .95rem;
-}
+.liste li { padding: .65rem 0; border-top: 1px solid var(--kant); font-size: .95rem; }
 .liste li:first-child { border-top: none; }
+.merke { margin-right: .35rem; }
 
-/* ---------- brødskive: små beskjeder nederst ---------- */
+/* ---------- framdrift i kveldsrunden ---------- */
+
+.framdrift { display: flex; gap: 5px; margin-bottom: 1.1rem; }
+.framdrift i {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--kant);
+  transition: background-color var(--rolig) var(--kurve);
+}
+.framdrift i[data-pa="ja"] { background: var(--aksent); }
+
+.steg { animation: stegInn .3s var(--kurve); }
+@keyframes stegInn {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.stegrad { display: flex; gap: .5rem; margin-top: 1.2rem; }
+.stegrad .hoved { flex: 2 1 0; }
+.stegrad .blank { flex: 1 1 0; }
+
+/* ---------- tall ---------- */
+
+.stor-tall {
+  font-family: var(--serif);
+  font-size: 2.4rem;
+  font-weight: 600;
+  letter-spacing: -.03em;
+  line-height: 1;
+  margin-right: .4rem;
+}
+
+/* ---------- innlogging ---------- */
+
+.portal { padding-top: 2.5rem; text-align: center; }
+.portal .glass { width: 96px; animation: sveve 5s ease-in-out infinite alternate; }
+.portal h1 { margin: 1rem 0 2rem; }
+
+@keyframes sveve {
+  from { transform: translateY(0); }
+  to { transform: translateY(-7px); }
+}
+
+.feil { color: var(--aksent); font-size: .88rem; margin-top: .6rem; }
+
+/* ---------- brødskive ---------- */
 
 .brodske {
   position: fixed;
   left: 50%;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  transform: translate(-50%, 1rem);
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  transform: translate(-50%, 1.25rem) scale(.96);
   background: var(--tekst);
   color: var(--bg);
-  padding: .7rem 1rem;
+  padding: .75rem 1.1rem;
   border-radius: 999px;
   font-size: .9rem;
   max-width: calc(100vw - 2rem);
   opacity: 0;
   pointer-events: none;
-  transition: opacity .2s, transform .2s;
+  transition: opacity var(--rask) var(--kurve), transform .3s var(--kurve);
   z-index: 10;
 }
-.brodske[data-vis="ja"] { opacity: 1; transform: translate(-50%, 0); }
+.brodske[data-vis="ja"] { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+/* ---------- ro ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
 }
-
-/* ---------- steg i kveldsrunden ---------- */
-
-.steg-tall { color: var(--svak); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; }
-.stegrad { display: flex; gap: .5rem; margin-top: 1.2rem; }
-.stegrad .hoved { flex: 2 1 0; }
-.stegrad .blank { flex: 1 1 0; }
-
-.stor-tall { font-size: 2rem; font-weight: 650; letter-spacing: -.02em; }
