@@ -1370,6 +1370,15 @@ body.is-navigating {
   border-color: var(--green);
 }
 
+/*
+ * Ringen gjør at prikken leses mot både lys og mørk bakgrunn. Uten den
+ * forsvant den svarte ekspertprikken helt i mørk modus.
+ */
+.chip--dot::before,
+.card__grade::before {
+  box-shadow: 0 0 0 1px rgb(127 127 127 / 55%);
+}
+
 .chip--dot::before {
   display: inline-block;
   width: 9px;

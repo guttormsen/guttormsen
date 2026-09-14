@@ -4,7 +4,7 @@
  *
  * Røyktesten sjekker at ting virker. Denne er for å se hvordan det ser ut.
  *
- *   node scripts/skjermbilder.mjs [--bredde 390] [--hoyde 780] [--ut mappe]
+ *   node scripts/skjermbilder.mjs [--bredde 390] [--hoyde 780] [--ut mappe] [--mork]
  */
 import { createServer } from 'node:http';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -57,6 +57,7 @@ const context = await browser.newContext({
   isMobile: true,
   hasTouch: true,
   deviceScaleFactor: 2,
+  colorScheme: process.argv.includes('--mork') ? 'dark' : 'light',
 });
 
 // I sandkassede miljøer når ikke nettleseren ut på egen hånd, mens Node gjør det.
