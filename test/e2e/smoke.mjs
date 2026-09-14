@@ -343,6 +343,31 @@ try {
     await page.waitForSelector('#trail-preview .preview__name', { timeout: 20000 });
     const previewName = await page.locator('.preview__name').textContent();
     check('trykk på stien viser den i kartet', previewName === trailPick.name, previewName ?? '');
+
+    // Hele stien skal være synlig, ikke gjemt bak kortet eller bunnarket.
+    const visibleRoute = await page.evaluate(() => {
+      const view = window.lykkeligtur.view;
+      const points = window.lykkeligtur.state.preview.points;
+      const map = document.querySelector('#map').getBoundingClientRect();
+      const card = document.querySelector('#trail-preview').getBoundingClientRect();
+      const panel = document.querySelector('#panel').getBoundingClientRect();
+      const inside = (box, x, y) => x > box.left && x < box.right && y > box.top && y < box.bottom;
+      const skjult = points.filter((p) => {
+        const at = view.map.latLngToContainerPoint([p.lat, p.lon]);
+        if (at.x < 0 || at.y < 0 || at.x > map.width || at.y > map.height) return true;
+        const y = map.top + at.y;
+        const x = map.left + at.x;
+        // Panelet er en spalte ved siden av kartet på skrivebord, og et ark
+        // nederst på mobil. Rektangelet dekker begge.
+        return inside(panel, x, y) || inside(card, x, y);
+      });
+      return { av: points.length, skjult: skjult.length };
+    });
+    check(
+      'hele stien er synlig i kartet',
+      visibleRoute.skjult === 0,
+      `${visibleRoute.skjult} av ${visibleRoute.av} punkter skjult`,
+    );
     check(
       'panelet spretter ikke opp av seg selv',
       (await page.evaluate(() => window.lykkeligtur.state.trip.waypoints.length)) === 0 &&
@@ -425,6 +450,12 @@ try {
   await advanced.locator('summary').click();
   await page.waitForTimeout(200);
   check('avanserte valg kan åpnes', await page.locator('#opt-snap').isVisible());
+
+  // Panelet tegnes på nytt hver gang noe kommer inn i bakgrunnen. Da skal
+  // ikke blokka man nettopp åpnet smelle igjen.
+  await page.evaluate(() => window.lykkeligtur.selectTab('turen'));
+  await page.waitForTimeout(400);
+  check('åpnede seksjoner blir stående åpne', await page.locator('#opt-snap').isVisible());
   check('følg sti er på som standard', await page.locator('#opt-snap').isChecked());
   await advanced.locator('summary').click();
 

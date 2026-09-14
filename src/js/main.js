@@ -293,9 +293,9 @@ function showPreview(trip) {
   S.state.hoveredCard = null;
   S.state.preview = trip;
   view.showSuggestion(trip.points);
-  // fitRoute tar selv hensyn til hvor mye bunnarket dekker.
-  view.fitRoute(trip.points);
+  // Kortet må tegnes først: fitRoute måler hvor mye av kartet det dekker.
   renderPreview();
+  view.fitRoute(trip.points);
   openLayer('forhåndsvisning', () => {
     S.state.preview = null;
     previewRun++;

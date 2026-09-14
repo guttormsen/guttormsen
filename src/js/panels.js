@@ -45,6 +45,14 @@ const chip = (label, active, onClick, { icon, title, disabled } = {}) =>
     onclick: onClick,
   }, [icon && el('span', { 'aria-hidden': 'true', text: `${icon} ` }), label]);
 
+/**
+ * Hvilke sammenslåtte blokker brukeren selv har åpnet eller lukket.
+ *
+ * Panelet tegnes på nytt hver gang noe kommer inn i bakgrunnen – bilder, vær,
+ * severdigheter. Uten dette smalt «Avansert» igjen midt mens man holdt på.
+ */
+const foldState = new Map();
+
 const section = (title, children, { open = true, collapsible = false, badge } = {}) => {
   if (!collapsible) {
     return el('section', { class: 'block' }, [
@@ -53,10 +61,13 @@ const section = (title, children, { open = true, collapsible = false, badge } = 
       ...[].concat(children).filter(Boolean),
     ]);
   }
-  return el('details', { class: 'block block--fold', open }, [
+  const key = String(title);
+  const node = el('details', { class: 'block block--fold', open: foldState.get(key) ?? open }, [
     el('summary', { class: 'block__title' }, [title, badge && el('span', { class: 'block__badge', text: badge })]),
     el('div', { class: 'block__body' }, [].concat(children).filter(Boolean)),
   ]);
+  node.addEventListener('toggle', () => foldState.set(key, node.open));
+  return node;
 };
 
 // `el` bruker createElement, som ikke duger til SVG – lag dem i riktig navnerom.

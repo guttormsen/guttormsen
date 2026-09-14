@@ -248,16 +248,24 @@ export function createMap(container, handlers = {}) {
   /* ---------- Publikt grensesnitt ---------- */
 
   /**
-   * Hvor mye av kartet bunnarket dekker. Turen skal få plass i det man
+   * Hvor mye av kartets underkant som er dekket av noe annet – bunnarket, og
+   * forhåndsvisningen når den ligger der. Turen skal få plass i det man
    * faktisk ser, ikke bak arket.
    */
   function coveredBySheet() {
+    const box = container.getBoundingClientRect();
     const raw = getComputedStyle(document.documentElement).getPropertyValue('--sheet-cover');
-    const covered = Number.parseFloat(raw);
-    if (!Number.isFinite(covered) || covered <= 0) return 0;
-    const height = container.getBoundingClientRect().height;
-    const overlap = covered - (window.innerHeight - container.getBoundingClientRect().bottom);
-    return Math.max(0, Math.min(overlap, height * 0.5));
+    const sheet = Number.parseFloat(raw);
+    let covered = 0;
+    if (Number.isFinite(sheet) && sheet > 0) {
+      covered = Math.max(0, sheet - (window.innerHeight - box.bottom));
+    }
+    const preview = document.querySelector('#trail-preview');
+    if (preview && !preview.hidden) {
+      // Kortet ligger rett over arket, så det legger seg på toppen av tallet.
+      covered += preview.getBoundingClientRect().height + 12;
+    }
+    return Math.max(0, Math.min(covered, box.height * 0.55));
   }
 
   return {
