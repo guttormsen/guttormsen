@@ -535,6 +535,17 @@ try {
   await page.click('.tab[data-tab="finn"]');
   await page.click('#btn-draw');
   await page.waitForTimeout(200);
+  /* «Start turen» og tegnehjelpen sto på samme plass og lå oppå hverandre. */
+  const overlapping = await page.evaluate(() => {
+    const start = document.querySelector('#btn-start');
+    const label = document.querySelector('#trail-label');
+    if (start.hidden || label.hidden) return false;
+    const a = start.getBoundingClientRect();
+    const b = label.getBoundingClientRect();
+    return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+  });
+  check('startknappen ligger ikke oppå tegnehjelpen', !overlapping);
+
   check('tegnemodus viser angre og tøm', await page.locator('#draw-tools').isVisible());
   await page.click('#btn-clear');
   await page.waitForTimeout(400);

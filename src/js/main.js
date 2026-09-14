@@ -275,6 +275,9 @@ function setDrawing(on) {
   hoveredTrail = null;
   view.highlightTrail(null);
   showTrailLabel(null);
+  // «Start turen» og tegnehjelpen sto på samme plass i kartet og lå oppå
+  // hverandre. Mens man tegner, er det tegningen som gjelder.
+  updateStartButton();
   view.drawWaypoints(S.state.trip.waypoints);
   if (on && !S.state.trip.waypoints.length) {
     toast('Trykk i kartet for å sette startpunktet. Ruta følger stier av seg selv.');
@@ -1171,6 +1174,15 @@ function renderNavBar() {
   publishSheetHead();
 }
 
+/** «Start turen» vises bare når det faktisk er en tur å starte, og plass til den. */
+function updateStartButton() {
+  $('#btn-start').hidden =
+    !S.state.summary ||
+    S.state.navigation.active ||
+    Boolean(S.state.preview) ||
+    view.isDrawing();
+}
+
 function renderAll() {
   const hasRoute = Boolean(S.state.summary);
   // Nøkkeltallene hører til turen. På turforslag er de bare i veien.
@@ -1181,7 +1193,7 @@ function renderAll() {
   renderNavBar();
   renderPreview();
   // «Start turen» hører hjemme i kartet, der man ser hvor man skal.
-  $('#btn-start').hidden = !hasRoute || S.state.navigation.active || Boolean(S.state.preview);
+  updateStartButton();
   render(
     $('#panel-footer'),
     panels.renderFooter(S.state.summary, S.state.navigation, handlers).flat().filter(Boolean),
