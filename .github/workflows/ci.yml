@@ -51,6 +51,10 @@ jobs:
         with:
           # Slår på Pages for repoet første gang, så ingen må gjøre det manuelt.
           enablement: true
+      - name: Hold den andre appen utenfor
+        # lykkeglasset/ er et eget prosjekt med egen adresse, og skal aldri
+        # havne på turappens side. Se CLAUDE.md i rota.
+        run: rm -rf lykkeglasset
       - name: Pakk siden
         uses: actions/upload-pages-artifact@v3
         with:

@@ -1,0 +1,28 @@
+# Egen arbeidsflyt for lykkeglasset/. Den kjører bare når noe i den mappa
+# endrer seg, og rører ikke turappen – se CLAUDE.md i rota.
+name: Lykkeglasset
+
+on:
+  push:
+    paths: ['lykkeglasset/**', '.github/workflows/lykkeglasset.yml']
+  pull_request:
+    paths: ['lykkeglasset/**', '.github/workflows/lykkeglasset.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Enhetstester
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lykkeglasset
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Testene bruker node --test og node:sqlite. Ingenting å installere.
+      - run: npm test

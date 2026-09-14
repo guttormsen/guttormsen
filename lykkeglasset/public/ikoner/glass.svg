@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Lykkeglasset">
+  <rect width="512" height="512" rx="112" fill="#17130f"/>
+  <rect x="176" y="96" width="160" height="40" rx="14" fill="#e0a83c"/>
+  <path d="M168 152h176a24 24 0 0 1 24 24v192a48 48 0 0 1-48 48H192a48 48 0 0 1-48-48V176a24 24 0 0 1 24-24z"
+        fill="none" stroke="#f2e9e0" stroke-width="20"/>
+  <circle cx="216" cy="300" r="22" fill="#e08a6a"/>
+  <circle cx="284" cy="268" r="18" fill="#e0a83c"/>
+  <circle cx="300" cy="336" r="24" fill="#cf9a4e"/>
+  <circle cx="228" cy="364" r="16" fill="#e08a6a"/>
+</svg>

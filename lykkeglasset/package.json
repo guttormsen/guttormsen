@@ -1,0 +1,20 @@
+{
+  "name": "lykkeglasset",
+  "version": "1.0.0",
+  "description": "Kveldsrunden: tre gode ting om dagen, og beskjed når det trengs.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "oppsett": "node scripts/oppsett.mjs",
+    "lokalt": "node scripts/lokalt.mjs",
+    "test": "node --test test/*.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "ikoner": "node scripts/ikoner.mjs",
+    "db:skjema": "wrangler d1 execute lykkeglasset --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
+}

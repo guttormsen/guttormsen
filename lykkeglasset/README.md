@@ -1,0 +1,144 @@
+# Lykkeglasset
+
+Et kveldsrituale for to. Hun fører dagen på under ett minutt – hvordan den
+var, tre gode ting, og hva hun trenger. Han får beskjed når det betyr noe, og
+legger igjen en hilsen tilbake.
+
+Ingen andre har tilgang. Ingen sporing, ingen analyse, ingen tredjeparter.
+
+> Dette er et eget prosjekt og har ingenting med turappen i rotmappa å gjøre.
+> Se `CLAUDE.md` her i mappa.
+
+---
+
+## De tre reglene appen er bygget rundt
+
+**1. Hun bestemmer hva han får se.** Fritekst deles bare når hun huker av.
+Hele dagen kan merkes privat, og da går ingenting ut – uansett hvor lav den
+er. Siste steg i kveldsrunden viser ordrett hva som sendes, før hun lagrer.
+I koden går alt som skal til Mathias gjennom `forHam()` i `src/worker.js`, så
+det er ett sted å lese for å vite at det stemmer.
+
+**2. Varsel bare når det betyr noe.** Pling hver kveld, og han slutter å se
+etter. Pling bare når det er tungt, og appen blir et alarmanlegg hun vegrer
+seg for å bruke. Derfor:
+
+| Dagen | Hva som skjer |
+|---|---|
+| «Ring meg» eller «kom hit» | Varsel med lyd, med én gang |
+| 1–2 av 5 | Varsel med lyd |
+| To tunge dager på rad | Én stille beskjed i tillegg |
+| 5 av 5 | Varsel – de gode dagene skal telle like mye |
+| 3–4 av 5 | Ingen varsel. Det står i appen når han åpner den |
+| Merket privat | Ingenting, uansett |
+
+**3. Hun får noe tilbake.** En app som bare rapporterer oppover blir en
+plikt. Derfor ligger det en hilsen fra ham klar om morgenen, brev han har
+skrevet på forhånd til dårlige dager, og «glasset»: en tilfeldig god ting hun
+selv skrev for flere måneder siden og har rukket å glemme.
+
+Ingen streaks. Det siste noen trenger på en tung dag er å miste en rekke.
+
+**Og en fjerde, som ikke er en funksjon:** dette er ikke kriseverktøy.
+«Ring meg» er en knapp, ikke en behandling. Går det virkelig galt, er
+telefonen riktig sted – og Mental Helse svarer på 116 123, hele døgnet.
+
+---
+
+## Slik henger det sammen
+
+```
+wrangler.toml         hvor appen kjører, og hva som ikke er hemmelig
+schema.sql            tabellene
+src/
+  worker.js           API-et: ruter, tilgang, og filteret forHam()
+  auth.js             to koder, signert informasjonskapsel i et halvår
+  dato.js             døgnet regnes i norsk tid, ikke UTC
+  varsler.js          hva som utløser varsel, og hva det står i dem
+  telegram.js         ett kall ut
+public/
+  index.html          skallet
+  app.js              hele grensesnittet, uten rammeverk
+  app.css             lys og mørk modus
+  sw.js               offline – men aldri mellomlagring av /api/
+scripts/
+  oppsett.mjs         hele oppsettet i ett kjør
+  ikoner.mjs          tegner appikonene som PNG
+test/                 31 enhetstester av det som kan gå galt stille
+```
+
+`varsler.js` og `dato.js` er rene funksjoner uten avhengigheter. Det er de
+reglene som er verdt å teste – at en privat dag aldri lekker, at «ring meg»
+går foran, at en rettelse ikke sender varselet på nytt, og at døgnet skifter
+ved norsk midnatt og ikke ved UTC.
+
+---
+
+## Sette det opp
+
+Du trenger ingen server. Cloudflare kjører både siden og API-et på gratisplanen,
+uten kort, og alt er ett skript:
+
+```bash
+cd lykkeglasset
+npm install
+npm run oppsett
+```
+
+Skriptet logger deg inn hos Cloudflare, lager databasen, setter inn tabellene,
+spør om de to kodene og Telegram-tokenet, og legger appen ut. Til slutt får du
+adressen. Åpne den på telefonen og legg den til på hjemskjermen.
+
+### Telegram
+
+Boten er laget i [@BotFather](https://t.me/BotFather). To ting må stemme:
+
+1. **Boten må være medlem av gruppa** varslene skal til. Legg den inn, og send
+   en melding i gruppa etterpå.
+2. **Tokenet er et passord.** Det settes med `wrangler secret put` og skal
+   aldri stå i en fil i repoet. Har det vært innom en chat, en skjermdeling
+   eller en e-post: lag et nytt med `/revoke` hos BotFather. Den som har
+   tokenet, kan lese alt boten ser.
+
+Gruppa som varslene går til står i `wrangler.toml` som `TELEGRAM_CHAT_ID`.
+Den er ikke hemmelig – uten token er den ubrukelig.
+
+### Justeringer uten å røre koden
+
+I `wrangler.toml`:
+
+| Nøkkel | Hva den gjør |
+|---|---|
+| `PAMINNELSE_KL` | Når appen minner om kveldsrunden hvis dagen står tom (norsk tid) |
+| `PAMINNELSE` | Sett til `"nei"` for å droppe påminnelsen helt |
+| `TELEGRAM_CHAT_ID` | Hvilken samtale varslene går til |
+| `TIDSSONE` | Hvilken tidssone døgnet regnes i |
+
+### Under utvikling
+
+```bash
+npm test     # enhetstestene
+npm run dev  # kjører lokalt med egen database
+npm run ikoner
+```
+
+---
+
+## Det som er verdt å vite før dere begynner
+
+**Spør henne først.** En app som varsler den ene om den andres humør er en
+fin gave hvis hun er med på den, og noe helt annet hvis hun ikke er det.
+Forskjellen ligger ikke i koden – den ligger i om hun vet hva den gjør, og
+kan slå den av.
+
+**Det som er sendt, kan ikke tas tilbake.** Trykker hun lagre på en dag som
+utløser varsel, er meldingen ute. Å endre dagen etterpå sender ingenting nytt,
+men fjerner heller ikke det som alt er sendt.
+
+**Appen erstatter ikke en samtale.** Den er bygget for å starte dem: derfor
+«hva trenger du?» framfor bare en tallskala. Beskjeden om at dagen var dårlig
+er lite verdt uten neste linje, som sier hva han skal gjøre med det.
+
+## Lisens
+
+MIT.

@@ -68,7 +68,7 @@ const rules = {
 };
 
 export default [
-  { ignores: ['vendor/**', 'node_modules/**', 'test/e2e/shots/**'] },
+  { ignores: ['vendor/**', 'node_modules/**', 'test/e2e/shots/**', 'lykkeglasset/**'] },
   {
     files: ['src/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: browser },

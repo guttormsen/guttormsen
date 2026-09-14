@@ -1,0 +1,32 @@
+# Cloudflare Worker: serverer appen og API-et fra samme adresse.
+#
+# Ingenting hemmelig hører hjemme i denne fila. Token, koder og sesjonsnøkkel
+# settes med `wrangler secret put` – se README.
+
+name = "lykkeglasset"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lykkeglasset"
+# Fylles inn av `npm run db:opprett`.
+database_id = "SETT_INN_HER"
+
+[vars]
+# Telegram-gruppa varslene går til. Ingen hemmelighet – uten token er den ubrukelig.
+TELEGRAM_CHAT_ID = "-5144581203"
+TIDSSONE = "Europe/Oslo"
+# Når appen minner om kveldsrunden hvis dagen ikke er fylt ut (norsk tid).
+PAMINNELSE_KL = "21:30"
+# Slå av påminnelsen ved å sette denne til "nei".
+PAMINNELSE = "ja"
+
+# Halvtimesticket brukes bare til å se om klokka har passert påminnelsestiden
+# i norsk tid. Cron kjører i UTC og kan ikke selv vite om det er sommertid.
+[triggers]
+crons = ["0,30 * * * *"]
