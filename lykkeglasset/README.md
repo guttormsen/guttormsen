@@ -62,6 +62,33 @@ blir hørt på. Alle andre får høflig ingenting.
 `/logginn` gir deg en engangslenke rett inn i appen, gyldig i et kvarter.
 Du trenger aldri taste koden din igjen.
 
+### Slik henger skjermene sammen
+
+Fire faner: **I dag** (kveldsrunden, det ferskeste fra den andre, ønskelista),
+**Kalender** (måneden, stemningskurva, sammendrag for uke/måned/år),
+**Glasset** (krukka, spørsmålslista, arkivet, årsboka) og **Meldinger**
+(samtalen, med skrivefeltet nederst der det hører hjemme).
+
+Brytere og nøkler ligger bak tannhjulet, ikke blant innholdet. Kort brukes
+til ting – en dag, en melding, et brev – og overskrift med hårstrek til
+resten. Ellers ser alt like viktig ut, og da er ingenting det.
+
+### Spørsmålslista
+
+Seksti spørsmål i fem kategorier, som er hennes egne. Hun velger kategori og
+hvor mange hun orker å se – tre, ti, tjue eller tretti – og forslagene byttes
+ut hver gang. Svarene legger seg i arkivet sammen med de gode tingene.
+
+### Sammendrag
+
+Uke, måned eller år: dager ført, snitt, gode og tunge dager, hva hun oftest
+har bedt om, beste og tyngste dagen med hennes egne ord. **Bare tall og det
+hun har skrevet** – ingen automatiske tolkninger. De blir fort tullete, og
+verre: de blir feil om et menneske.
+
+Trykker du på en dag i kalenderen, får du dagsarket: dagen satt til å leses,
+ikke en liste med felter.
+
 ### Føring bakover i tid
 
 Man husker ofte lenge etterpå at en dag var verdt å skrive ned. Trykk på en

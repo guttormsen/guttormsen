@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS svar (
   skrevet_kl TEXT NOT NULL
 );
 
+-- Spørsmålslista. Hennes egen: ett svar per spørsmål, når hun vil.
+CREATE TABLE IF NOT EXISTS sporsmalsvar (
+  nokkel     INTEGER PRIMARY KEY,
+  tekst      TEXT NOT NULL,
+  skrevet_kl TEXT NOT NULL
+);
+
 -- Reaksjoner på meldinger. Én per melding per person.
 CREATE TABLE IF NOT EXISTS reaksjoner (
   melding  INTEGER NOT NULL,

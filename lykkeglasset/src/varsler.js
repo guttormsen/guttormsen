@@ -182,6 +182,48 @@ export function morgenPuff(dag) {
 
 const snittOrd = (n) => (n == null ? '–' : n.toFixed(1).replace('.', ','));
 
+const PERIODENAVN = { uke: 'Sju siste dagene', maned: 'Siste måneden', ar: 'Siste året' };
+
+/** Tallene for en periode, og hennes egne ord om den beste og den tyngste. */
+export function sammendragstekst(d, behovTabell = BEHOV) {
+  const linjer = [`📆 ${PERIODENAVN[d.periode] ?? 'Perioden'}`, ''];
+  linjer.push(`${d.ført} dager ført${d.private ? ` (${d.private} holdt for seg selv)` : ''}`);
+  if (d.snitt != null) {
+    linjer.push(`Snitt: ${d.snitt.toFixed(1).replace('.', ',')} av 5`);
+    linjer.push(`${d.gode_dager} gode · ${d.tunge_dager} tunge`);
+  }
+  linjer.push(`${d.antall_gode_ting} gode ting${d.om_oss ? `, ${d.om_oss} om dere` : ''}`);
+  if (d.antall_bilder) linjer.push(`${d.antall_bilder} bilder og lydklipp`);
+
+  if (d.beste) {
+    linjer.push('', `Beste dagen: ${norskDatoKort(d.beste.dato)} – ${d.beste.humor} av 5`);
+    for (const g of d.beste.gode_ting.slice(0, 3)) linjer.push(`  • ${g.tekst}`);
+  }
+  if (d.tyngste) {
+    linjer.push('', `Tyngste dagen: ${norskDatoKort(d.tyngste.dato)} – ${d.tyngste.humor} av 5`);
+  }
+  if (d.behov.length) {
+    linjer.push('', 'Hun har bedt om:');
+    for (const b of d.behov) {
+      linjer.push(`  • ${behovTabell[b.behov].etikett.toLowerCase()}${b.antall > 1 ? ` (${b.antall})` : ''}`);
+    }
+  }
+  return linjer.join('\n');
+}
+
+const norskDatoKort = (n) => `${Number(n.slice(8))}.${Number(n.slice(5, 7))}.`;
+
+/** Hvor langt hun er kommet i spørsmålslista, og det siste hun har svart. */
+export function sporsmalstekst({ ferdig, igjen, svarte }) {
+  const linjer = [`📝 Lykke har svart på ${ferdig} av ${ferdig + igjen} spørsmål.`];
+  if (!svarte.length) return `${linjer[0]}\n\nIngen svar ennå.`;
+  for (const s of svarte.slice(0, 3)) {
+    linjer.push('', s.t, `  «${s.svar}»`);
+  }
+  if (svarte.length > 3) linjer.push('', `… og ${svarte.length - 3} til i appen.`);
+  return linjer.join('\n');
+}
+
 /** Én melding i uka som sier noe en enkeltdag ikke kan. */
 export function ukesbrev(uke, godeTing) {
   const linjer = [
@@ -244,6 +286,98 @@ export function sporsmalFor(dato) {
   return SPORSMAL[tall % SPORSMAL.length];
 }
 
+/* ---------- spørsmålslista ---------- */
+
+/**
+ * Lykkes egen liste. Ikke kveldsrunden – dette er spørsmål man svarer på når
+ * man har lyst, og svarene legger seg i arkivet sammen med de gode tingene.
+ *
+ * Rekkefølgen er nøkkelen: et svar peker på plassen i denne lista, så nye
+ * spørsmål må legges til på slutten og gamle aldri fjernes.
+ */
+export const KATEGORIER = {
+  meg: 'Om meg',
+  oss: 'Om oss',
+  minner: 'Minner',
+  framover: 'Framover',
+  smatt: 'Småting',
+};
+
+/**
+ * Nøkkelen er det som lagres, ikke plassen i lista. Nye spørsmål kan legges
+ * hvor som helst og gamle kan tas ut, uten at et svar plutselig hører til et
+ * annet spørsmål enn det hun svarte på.
+ */
+export const LISTA = [
+  { k: 1, kat: 'meg', t: 'Hva er du best til som ingen vet om?' },
+  { k: 2, kat: 'meg', t: 'Hva er du dårligst til å be om?' },
+  { k: 3, kat: 'meg', t: 'Hva gjør du når ingen ser på?' },
+  { k: 4, kat: 'meg', t: 'Hva er du stolt av som ikke står på noen CV?' },
+  { k: 5, kat: 'meg', t: 'Hvilken versjon av deg selv er du mest glad i?' },
+  { k: 6, kat: 'meg', t: 'Hva gjør deg rolig?' },
+  { k: 7, kat: 'meg', t: 'Hva er ditt trygge sted?' },
+  { k: 8, kat: 'meg', t: 'Hva liker du ved deg selv om morgenen?' },
+  { k: 9, kat: 'meg', t: 'Hva er du ferdig med å bry deg om?' },
+  { k: 10, kat: 'meg', t: 'Hva gjør deg sint, men på en god måte?' },
+  { k: 11, kat: 'meg', t: 'Hvilken årstid er du?' },
+  { k: 12, kat: 'meg', t: 'Hva slags kveld trenger du når alt er mye?' },
+
+  { k: 13, kat: 'oss', t: 'Hva er den beste dagen du har hatt med Mathias?' },
+  { k: 14, kat: 'oss', t: 'Når visste du at det var noe?' },
+  { k: 15, kat: 'oss', t: 'Hva er det rareste dere gjør sammen?' },
+  { k: 16, kat: 'oss', t: 'Hva tror du han ikke vet at du legger merke til?' },
+  { k: 17, kat: 'oss', t: 'Hva er han best til?' },
+  { k: 18, kat: 'oss', t: 'Hva savner du når han ikke er der?' },
+  { k: 19, kat: 'oss', t: 'Hvilken vane hos ham har du begynt å gjøre selv?' },
+  { k: 20, kat: 'oss', t: 'Hva vil du dere skal bli bedre på?' },
+  { k: 21, kat: 'oss', t: 'Hva er den beste samtalen dere har hatt?' },
+  { k: 22, kat: 'oss', t: 'Hva skulle du sagt oftere?' },
+  { k: 23, kat: 'oss', t: 'Hvor skulle du ønske dere dro nå?' },
+  { k: 24, kat: 'oss', t: 'Hva slags gamle mennesker tror du dere blir?' },
+
+  { k: 25, kat: 'minner', t: 'Hvor var du lykkeligst som barn?' },
+  { k: 26, kat: 'minner', t: 'Hva lukter barndom?' },
+  { k: 27, kat: 'minner', t: 'Hva er det fineste noen har sagt til deg?' },
+  { k: 28, kat: 'minner', t: 'Hvilken dag ville du levd om igjen, akkurat lik?' },
+  { k: 29, kat: 'minner', t: 'Hva er det vanskeligste du har klart?' },
+  { k: 30, kat: 'minner', t: 'Hva sa foreldrene dine som du hører deg selv si nå?' },
+  { k: 31, kat: 'minner', t: 'Hvilken kompliment sitter fortsatt i?' },
+  { k: 32, kat: 'minner', t: 'Hva er den beste gaven du har gitt?' },
+  { k: 33, kat: 'minner', t: 'Hvilket sted vil du tilbake til?' },
+  { k: 34, kat: 'minner', t: 'Hva er du redd for å glemme?' },
+  { k: 35, kat: 'minner', t: 'Hvem savner du?' },
+  { k: 36, kat: 'minner', t: 'Hvilket råd har du fått som var feil?' },
+
+  { k: 37, kat: 'framover', t: 'Hva ville du gjort med et helt år fri?' },
+  { k: 38, kat: 'framover', t: 'Hvilken vane vil du ha om ti år?' },
+  { k: 39, kat: 'framover', t: 'Hva vil du lære?' },
+  { k: 40, kat: 'framover', t: 'Hva slags gammel dame vil du bli?' },
+  { k: 41, kat: 'framover', t: 'Hva vil du at folk skal huske deg for?' },
+  { k: 42, kat: 'framover', t: 'Hva ville du sagt til deg selv om fem år?' },
+  { k: 43, kat: 'framover', t: 'Hva håper du blir likt om ti år?' },
+  { k: 44, kat: 'framover', t: 'Hva håper du blir annerledes?' },
+  { k: 45, kat: 'framover', t: 'Hva skulle du ønske du turte oftere?' },
+  { k: 46, kat: 'framover', t: 'Hvem har du lyst til å ta kontakt med?' },
+  { k: 47, kat: 'framover', t: 'Hva er du nysgjerrig på nå?' },
+  { k: 48, kat: 'framover', t: 'Hva vil du at dette glasset skal ha samlet opp om fem år?' },
+
+  { k: 49, kat: 'smatt', t: 'Hvilken sang kan du ikke høre uten å bli i godt humør?' },
+  { k: 50, kat: 'smatt', t: 'Hvilken mat smaker hjem?' },
+  { k: 51, kat: 'smatt', t: 'Hva er det dummeste du har ledd av?' },
+  { k: 52, kat: 'smatt', t: 'Hva er din favorittid på døgnet, og hvorfor?' },
+  { k: 53, kat: 'smatt', t: 'Hvordan ser en perfekt lørdag ut?' },
+  { k: 54, kat: 'smatt', t: 'Hva er det rareste du har vært redd for?' },
+  { k: 55, kat: 'smatt', t: 'Hvilken liten ting kan redde en dårlig dag?' },
+  { k: 56, kat: 'smatt', t: 'Hva er det fineste ved der du bor nå?' },
+  { k: 57, kat: 'smatt', t: 'Hvilken bok eller film har forandret noe i deg?' },
+  { k: 58, kat: 'smatt', t: 'Hva tar du for gitt som du ikke burde?' },
+  { k: 59, kat: 'smatt', t: 'Hva er det siste som fikk deg til å gråte av noe fint?' },
+  { k: 60, kat: 'smatt', t: 'Hva gjør en dag god, egentlig?' },
+];
+
+/** Slår opp ett spørsmål på nøkkelen sin. */
+export const sporsmalMed = (k) => LISTA.find((s) => s.k === Number(k)) ?? null;
+
 /* ---------- milepæler ---------- */
 
 const MILEPÆLER = [100, 250, 500, 1000, 2500, 5000];
@@ -264,11 +398,15 @@ export const milepæl = (n) => [
 
 /** Forsida i boten. Én melding som bytter innhold, ikke en strøm av nye. */
 export const MENY = [
-  [['📅 I dag', 'meny:idag'], ['📆 Uka', 'meny:uke']],
-  [['🫙 Glasset', 'meny:glasset'], ['📊 Status', 'meny:status']],
+  [['📅 I dag', 'meny:idag'], ['📆 Sammendrag', 'meny:sammendrag']],
+  [['🫙 Glasset', 'meny:glasset'], ['📝 Spørsmål', 'meny:sporsmal']],
   [['✨ Ønskelista', 'meny:onsker'], ['💌 Brev', 'meny:brev']],
+  [['📋 Status', 'meny:status'], ['⬇️ Eksporter', 'meny:eksport']],
   [['🔑 Logg meg inn', 'meny:logginn'], ['🔗 Lenke til Lykke', 'meny:lenkelykke']],
-  [['⬇️ Eksporter alt', 'meny:eksport']],
+];
+
+export const PERIODER = [
+  [['Uka', 'meny:sammendrag:uke'], ['Måneden', 'meny:sammendrag:maned'], ['Året', 'meny:sammendrag:ar']],
 ];
 
 export const TILBAKE = [[['‹ Meny', 'meny:hjem']]];
@@ -281,6 +419,8 @@ export const MENYTEKST = [
   '  /brev <tekst> – brev til en dårlig dag',
   '  /onske <tekst> – på ønskelista',
   '  /dag 2026-09-14 – én bestemt dag',
+  '  /sammendrag, /maned, /ar – tallene for en periode',
+  '  /sporsmal – hvor langt hun er kommet i lista',
   '  /kode <ny kode> – ny kode for Lykke',
   '  /eksport – alt sammen som én fil',
 ].join('\n');
@@ -299,6 +439,7 @@ export const HENDELSER = {
   kode: () => '🔑 Lykke byttet koden sin.',
   huket: (tekst) => `✓ Lykke huket av: «${tekst}»`,
   reaksjon: (tegn, tekst) => `${tegn} Lykke reagerte på «${tekst}»`,
+  svarte: (sporsmal, svar) => `📝 Lykke svarte på «${sporsmal}»\n\n«${svar}»`,
   etterslep: (dato, humor) => [
     `🗓 Lykke fylte ut ${dato} i etterkant.`,
     '',

@@ -15,9 +15,10 @@ import {
   dagsnokkel, klokke, minutter, dagerMellom, sisteDager, sammeDagIFjor, norskDato, norskUkedag,
 } from './dato.js';
 import {
-  BEHOV, SVAR, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske,
+  BEHOV, SVAR, melding, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske,
   erAktiv, morgenPuff, ukesbrev, arsbok, dagsrapport, onskeliste, statuslinje,
   MENY, TILBAKE, MENYTEKST, HENDELSER, REAKSJONER, sporsmalFor, milepælFor, milepæl,
+  LISTA, KATEGORIER, sporsmalMed, PERIODER, sammendragstekst, sporsmalstekst,
 } from './varsler.js';
 import { sendTelegram, sendFil, kvitterTrykk, byttUtKnapper, endreMelding } from './telegram.js';
 
@@ -339,6 +340,13 @@ async function lagreDag(kropp, env, ctx) {
 
   const sendteNå = [];
 
+  // En dag som fylles ut på nytt er en endring, ikke en ny dag. Den sier fra
+  // én gang – ellers ville hvert lille tastetrykk blitt et varsel.
+  if (fraFør && !dag.privat) {
+    const endret = `✏️ Lykke endret ${avstand === 0 ? 'dagen i dag' : norskDato(dato, true)}.\n\n${melding('dagen', dag)}`;
+    await sendEnGang(env, ctx, `endret:${nå().slice(0, 13)}`, dato, endret, true);
+  }
+
   if (avstand > 1) {
     // «Ring meg» fra en dag for tre uker siden er ikke et rop om hjelp, det er
     // et minne. Gamle dager får én stille beskjed, ikke alarmene.
@@ -374,7 +382,7 @@ async function lagreDag(kropp, env, ctx) {
 }
 
 /** Én tilfeldig god ting fra før i tiden. Helst noe hun har rukket å glemme. */
-async function trekkLapp(env) {
+async function trekkLapp(env, forrige = null) {
   const dato = idag(env);
   const grense = sisteDager(dato, 15).at(-1);
   const gamle = await env.DB
@@ -397,8 +405,12 @@ async function trekkLapp(env) {
   }
   if (!lapper.length) return { tom: true };
 
-  const valgt = lapper[Math.floor(Math.random() * lapper.length)];
-  return { ...valgt, når: norskDato(valgt.dato, true) };
+  // Trekkes den samme lappen om igjen, ser det ut som glasset er tomt. Den
+  // forrige holdes utenfor når det finnes noe annet å ta.
+  const utenom = lapper.filter((l) => l.tekst !== forrige);
+  const blant = utenom.length ? utenom : lapper;
+  const valgt = blant[Math.floor(Math.random() * blant.length)];
+  return { ...valgt, når: norskDato(valgt.dato, true), av: blant.length };
 }
 
 /** Alt hun har skrevet, søkbart. Han ser bare det hun har delt. */
@@ -409,6 +421,23 @@ async function arkiv(env, hvem, url) {
   const rader = await env.DB.prepare('SELECT * FROM dager ORDER BY dato DESC').all();
 
   const ut = [];
+  if (hvem === LYKKE || delt) {
+    const svar = await svarene(env);
+    for (const spm of LISTA) {
+      const s = svar.get(spm.k);
+      if (!s) continue;
+      if (bareOss && spm.kat !== 'oss') continue;
+      if (sok && !s.tekst.toLowerCase().includes(sok) && !spm.t.toLowerCase().includes(sok)) continue;
+      ut.push({
+        dato: s.skrevet_kl.slice(0, 10),
+        tekst: s.tekst,
+        sporsmal: spm.t,
+        om_oss: spm.kat === 'oss',
+        privat: false,
+      });
+    }
+  }
+
   for (const rad of (rader.results ?? [])) {
     const dag = radTilDag(rad);
     if (hvem !== LYKKE && !delt && (dag.privat || !dag.del_gode)) continue;
@@ -511,6 +540,97 @@ async function eksport(env, hvem) {
   };
 }
 
+/* ---------- spørsmålslista ---------- */
+
+const svarene = async (env) => {
+  const rader = await env.DB.prepare('SELECT nokkel, tekst, skrevet_kl FROM sporsmalsvar').all();
+  return new Map((rader.results ?? []).map((r) => [r.nokkel, r]));
+};
+
+/**
+ * Tre spørsmål om gangen, fra den kategorien hun har valgt.
+ *
+ * Seksti spørsmål i en liste er en oppgave. Tre er et tilbud – og de byttes
+ * ut hver gang hun ber om nye, eller når hun har svart på en.
+ */
+async function sporsmalslista(env, url) {
+  const kat = Object.hasOwn(KATEGORIER, url.searchParams.get('kat')) ? url.searchParams.get('kat') : null;
+  const svar = await svarene(env);
+
+  const iKategorien = LISTA.filter((s) => !kat || s.kat === kat);
+  const usvarte = iKategorien.filter((s) => !svar.has(s.k));
+  // Stokkes, så det ikke er de tre samme hver gang hun kommer tilbake.
+  for (let i = usvarte.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [usvarte[i], usvarte[j]] = [usvarte[j], usvarte[i]];
+  }
+
+  // Hun bestemmer hvor mange hun orker å se. Tre er et tilbud, tretti er en
+  // liste – og det er hun som vet hvilket av dem hun er i humør til.
+  const ønsket = Number(url.searchParams.get('antall'));
+  const antall = [3, 10, 20, 30].includes(ønsket) ? ønsket : 3;
+
+  return json({
+    kategorier: KATEGORIER,
+    kat,
+    antall,
+    forslag: usvarte.slice(0, antall),
+    igjen: usvarte.length,
+    ferdig: iKategorien.length - usvarte.length,
+    svarte: LISTA
+      .filter((s) => svar.has(s.k))
+      .map((s) => ({ ...s, svar: svar.get(s.k).tekst, skrevet_kl: svar.get(s.k).skrevet_kl }))
+      .reverse(),
+  });
+}
+
+/* ---------- sammendrag ---------- */
+
+/** Uke, måned eller år – tall og hennes egne ord, ikke tolkninger. */
+async function sammendrag(env, hvem, url) {
+  const til = idag(env);
+  const lengde = { uke: 7, maned: 30, ar: 365 }[url.searchParams.get('periode')] ?? 7;
+  const fra = sisteDager(til, lengde).at(-1);
+  const delt = await erDelt(env);
+
+  const rader = await env.DB
+    .prepare('SELECT * FROM dager WHERE dato >= ?1 AND dato <= ?2 ORDER BY dato')
+    .bind(fra, til).all();
+  const alle = (rader.results ?? []).map(radTilDag);
+  const synlige = hvem === LYKKE || delt ? alle : alle.filter((d) => !d.privat);
+  const åpne = synlige.filter((d) => !d.privat || hvem === LYKKE || delt);
+
+  const medHumør = åpne.filter((d) => Number.isFinite(d.humor));
+  const beste = medHumør.reduce((b, d) => (!b || d.humor > b.humor ? d : b), null);
+  const tyngste = medHumør.reduce((b, d) => (!b || d.humor < b.humor ? d : b), null);
+
+  const behov = new Map();
+  for (const d of åpne) if (d.behov) behov.set(d.behov, (behov.get(d.behov) ?? 0) + 1);
+
+  const gode = åpne.flatMap((d) => d.gode_ting);
+  const filer = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM filer WHERE dato >= ?1 AND dato <= ?2').bind(fra, til).first();
+
+  const kort = (d) => (d ? { dato: d.dato, humor: d.humor, gode_ting: d.gode_ting } : null);
+
+  return json({
+    fra,
+    til,
+    periode: url.searchParams.get('periode') ?? 'uke',
+    ført: alle.length,
+    private: alle.length - åpne.length,
+    snitt: medHumør.length ? medHumør.reduce((n, d) => n + d.humor, 0) / medHumør.length : null,
+    gode_dager: medHumør.filter((d) => d.humor >= 4).length,
+    tunge_dager: medHumør.filter((d) => d.humor <= 2).length,
+    beste: kort(beste),
+    tyngste: tyngste && beste && tyngste.dato !== beste.dato ? kort(tyngste) : null,
+    behov: [...behov].sort((a, b) => b[1] - a[1]).map(([n, antall]) => ({ behov: n, antall })),
+    antall_gode_ting: gode.length,
+    om_oss: gode.filter((g) => g.om_oss).length,
+    antall_bilder: filer?.n ?? 0,
+  });
+}
+
 /* ---------- det boten kan fortelle ---------- */
 
 async function tekstDag(env, dato) {
@@ -560,6 +680,19 @@ async function tekstGlasset(env) {
     : `🫙 «${lapp.tekst}»\n\n${lapp.når}`;
 }
 
+/** Sammendraget for en periode, som tekst. */
+async function tekstSammendrag(env, periode) {
+  const url = new URL(`https://x/?periode=${periode}`);
+  const d = await (await sammendrag(env, MATHIAS, url)).json();
+  return d.ført ? sammendragstekst(d, BEHOV) : '🫙 Ingenting ført i denne perioden.';
+}
+
+/** Hvor langt hun er kommet i sin egen spørsmålsliste. */
+async function tekstSporsmal(env) {
+  const d = await (await sporsmalslista(env, new URL('https://x/'))).json();
+  return sporsmalstekst(d);
+}
+
 /** Ønskelista, med en knapp per ting så den kan hukes av herfra. */
 async function ønskeskjerm(env) {
   const rader = await env.DB.prepare('SELECT * FROM onsker ORDER BY gjort_kl IS NOT NULL, id DESC').all();
@@ -602,6 +735,12 @@ async function engangslenke(env, hvem, origin) {
 /** Hva en menyknapp skal vise. */
 async function menyskjerm(env, valg, origin) {
   if (valg === 'onsker') return ønskeskjerm(env);
+
+  // Sammendraget har tre perioder å velge mellom, i den samme meldingen.
+  if (valg === 'sammendrag' || valg.startsWith('sammendrag:')) {
+    const periode = valg.split(':')[1] ?? 'uke';
+    return { tekst: await tekstSammendrag(env, periode), knapper: [...PERIODER, ...TILBAKE] };
+  }
   const tekst = {
     hjem: async () => MENYTEKST,
     idag: () => tekstIdag(env),
@@ -609,6 +748,7 @@ async function menyskjerm(env, valg, origin) {
     status: () => tekstStatus(env),
     glasset: () => tekstGlasset(env),
     brev: () => tekstBrev(env),
+    sporsmal: () => tekstSporsmal(env),
     logginn: () => engangslenke(env, MATHIAS, origin),
     lenkelykke: () => engangslenke(env, LYKKE, origin),
   }[valg];
@@ -744,6 +884,10 @@ async function fraTelegram(req, env, ctx, origin) {
   const snarvei = {
     '/idag': 'idag',
     '/uke': 'uke',
+    '/sammendrag': 'sammendrag',
+    '/maned': 'sammendrag:maned',
+    '/ar': 'sammendrag:ar',
+    '/sporsmal': 'sporsmal',
     '/status': 'status',
     '/glasset': 'glasset',
     '/onsker': 'onsker',
@@ -918,7 +1062,7 @@ async function api(req, env, url, ctx) {
     }
     return json(erLykke ? await tilstandLykke(env) : await tilstandMathias(env));
   }
-  if (sti === '/glasset') return json(await trekkLapp(env));
+  if (sti === '/glasset') return json(await trekkLapp(env, url.searchParams.get('forrige')));
 
   if (sti === '/fil' && req.method === 'POST') {
     if (!erLykke) return feil('Bare Lykke legger til bilder og lyd.', 403);
@@ -991,6 +1135,29 @@ async function api(req, env, url, ctx) {
     return json({ ok: true, hvem: mål });
   }
   if (sti === '/aarsbok') return arsboka(env, hvem, url);
+  if (sti === '/sammendrag') return sammendrag(env, hvem, url);
+
+  if (sti === '/sporsmal' && req.method === 'GET') {
+    if (!erLykke && !(await erDelt(env))) return feil('Lykkes egen liste.', 403);
+    return sporsmalslista(env, url);
+  }
+
+  if (sti === '/sporsmal' && req.method === 'POST') {
+    if (!erLykke) return feil('Bare Lykke svarer på disse.', 403);
+    const spm = sporsmalMed(kropp?.k);
+    if (!spm) return feil('Ukjent spørsmål.', 400);
+    const tekst = String(kropp?.tekst ?? '').trim().slice(0, 4000);
+
+    if (!tekst) {
+      await env.DB.prepare('DELETE FROM sporsmalsvar WHERE nokkel = ?1').bind(spm.k).run();
+      return json({ ok: true, tekst: null });
+    }
+    await env.DB.prepare(`INSERT INTO sporsmalsvar (nokkel, tekst, skrevet_kl) VALUES (?1, ?2, ?3)
+                          ON CONFLICT(nokkel) DO UPDATE SET tekst = ?2, skrevet_kl = ?3`)
+      .bind(spm.k, tekst, nå()).run();
+    send(env, ctx, HENDELSER.svarte(spm.t, tekst), true);
+    return json({ ok: true, tekst });
+  }
 
   // Én enkelt dag, for kalenderen. Han får den gjennom det samme filteret.
   if (sti === '/dag' && req.method === 'GET') {

@@ -233,6 +233,43 @@ p { margin: 0 0 .7rem; }
 }
 .topp h1 { margin: 0; }
 
+/* Toppen er navigasjon, ikke innhold. Den skal være lett. */
+.hode { display: flex; align-items: center; gap: .4rem; }
+.hode button {
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+  border-color: transparent;
+  background: none;
+  color: var(--svak);
+  display: grid;
+  place-items: center;
+}
+.hode button:hover { background: var(--flate-2); color: var(--tekst); }
+.hode svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- seksjon: innhold uten kortramme ---------- */
+
+/*
+ * Ikke alt er en ting. Brytere, lister og innstillinger får overskrift og en
+ * hårstrek i stedet for enda en boks – ellers ser alt like viktig ut.
+ */
+.seksjon { margin: 0 0 1.6rem; }
+.seksjon > h2 {
+  font-family: var(--sans);
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--svak);
+  padding-bottom: .5rem;
+  border-bottom: 1px solid var(--kant);
+  margin-bottom: .9rem;
+}
+.seksjon .hjelp { font-size: .86rem; color: var(--svak); margin: -.3rem 0 .8rem; }
+
 /* ---------- kort ---------- */
 
 .kort {
@@ -336,6 +373,10 @@ textarea {
 input:focus, textarea:focus { border-color: var(--kant-sterk); background: var(--flate-3); }
 input::placeholder, textarea::placeholder { color: var(--svak); opacity: .75; }
 textarea { min-height: 6.5rem; resize: vertical; line-height: 1.5; }
+
+/* Én god ting kan være ett ord eller tre linjer. Feltet vokser etter innholdet
+   i stedet for å be henne skrive kortere. */
+textarea.vokser { min-height: 48px; resize: none; overflow: hidden; }
 label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35rem; }
 
 /* ---------- fanerad ---------- */
@@ -502,6 +543,93 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 @keyframes popp {
   from { opacity: 0; transform: scale(.55); }
   to { opacity: 1; transform: none; }
+}
+
+/* ---------- periodevelger ---------- */
+
+.periode {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--flate-2);
+  border-radius: 999px;
+  margin-bottom: 1rem;
+}
+.periode button {
+  flex: 1;
+  min-height: 38px;
+  border: none;
+  background: none;
+  border-radius: 999px;
+  font-size: .86rem;
+  color: var(--svak);
+}
+.periode button[aria-pressed="true"] {
+  background: var(--flate);
+  color: var(--tekst);
+  font-weight: 600;
+  box-shadow: var(--skygge);
+}
+
+/* ---------- dagsarket ---------- */
+
+.ark .dato { font-size: .8rem; color: var(--svak); letter-spacing: .04em; }
+.ark .humor-linje {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: .5rem 0 1rem;
+  font-family: var(--serif);
+  font-size: 1.45rem;
+}
+.ark .humor-linje em { font-style: normal; font-size: 1.9rem; line-height: 1; }
+.ark .gode { list-style: none; margin: 0 0 1.1rem; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.ark .gode li {
+  display: flex;
+  gap: .6rem;
+  padding-left: .9rem;
+  border-left: 2px solid var(--kant-sterk);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+.ark .gode li[data-oss="ja"] { border-left-color: var(--rose); }
+.ark .felt { margin-bottom: 1rem; }
+.ark .felt p { margin: .3rem 0 0; line-height: 1.55; white-space: pre-wrap; }
+
+/* ---------- sammendrag ---------- */
+
+.hoydepunkt {
+  border-left: 3px solid var(--honning);
+  padding: .1rem 0 .1rem .9rem;
+  margin: 1rem 0;
+}
+.hoydepunkt .dato { font-size: .75rem; color: var(--svak); letter-spacing: .05em; text-transform: uppercase; }
+.hoydepunkt p { margin: .25rem 0 0; font-family: var(--serif); font-size: 1.05rem; line-height: 1.45; }
+.hoydepunkt[data-slag="tung"] { border-left-color: var(--h2); }
+
+/* ---------- spørsmålslista ---------- */
+
+.spm-liste { display: flex; flex-direction: column; gap: .5rem; }
+.spm {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: .85rem 1rem;
+  border-radius: 14px;
+  background: var(--flate-2);
+  border: 1px solid transparent;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.4;
+  min-height: 0;
+}
+.spm[data-svart="ja"] { background: none; border-color: var(--kant); }
+.spm .svaret {
+  display: block;
+  margin-top: .45rem;
+  font: .9rem/1.5 var(--sans);
+  color: var(--svak);
+  white-space: pre-wrap;
 }
 
 /* ---------- stemningskurva ---------- */
@@ -700,20 +828,45 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
    alle velgerne stående åpne samtidig. */
 .velgreaksjon[hidden] { display: none; }
 
+/*
+ * Velgeren svever over samtalen i stedet for å dytte den nedover. Ellers
+ * hopper alt man leser hver gang man vil sette et hjerte.
+ */
+.boblerad { position: relative; display: flex; }
+.boblerad[data-min="ja"] { justify-content: flex-end; }
+
 .velgreaksjon {
+  position: absolute;
+  bottom: calc(100% - 6px);
+  z-index: 4;
   display: flex;
-  gap: .25rem;
-  align-self: center;
-  margin: .2rem 0 .5rem;
-  animation: popp .25s var(--sprett);
-}
-.velgreaksjon button {
-  min-height: 40px;
-  width: 44px;
-  padding: 0;
+  gap: .2rem;
+  padding: .25rem;
   border-radius: 999px;
-  font-size: 1.2rem;
+  background: var(--flate);
+  border: 1px solid var(--kant);
+  box-shadow: var(--skygge-hev);
+  animation: popp .22s var(--sprett);
 }
+.boblerad[data-min="ja"] .velgreaksjon { right: .5rem; }
+.boblerad[data-min="nei"] .velgreaksjon { left: .5rem; }
+.velgreaksjon button {
+  min-height: 38px;
+  width: 40px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 999px;
+  font-size: 1.15rem;
+}
+.velgreaksjon button:hover { background: var(--flate-2); }
+.velgreaksjon button[aria-pressed="true"] { background: var(--flate-3); }
+
+/* Meldingene er en samtale, ikke et kort i en liste. Skrivefeltet henger
+   nederst, slik man forventer av en chat. */
+.chat { display: flex; flex-direction: column; min-height: calc(100dvh - 12rem); }
+.chat .samtale { flex: 1; justify-content: flex-end; margin-bottom: 1rem; }
+.chat .skrivefelt { position: sticky; bottom: .5rem; }
 
 .skrivefelt { display: flex; gap: .5rem; align-items: flex-end; }
 .skrivefelt textarea { min-height: 48px; max-height: 8rem; }

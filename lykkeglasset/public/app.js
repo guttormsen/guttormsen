@@ -38,6 +38,17 @@ const svg = (tag, attrs, barn) => lagNode(tag, attrs, barn, true);
 const sti = (d, attrs = {}) => svg('path', { d, ...attrs });
 
 const app = document.getElementById('app');
+
+/** Lar et tekstfelt vokse med innholdet. Ett ord eller tre linjer, samme felt. */
+function voksende(felt) {
+  const juster = () => {
+    felt.style.height = 'auto';
+    felt.style.height = `${felt.scrollHeight}px`;
+  };
+  felt.addEventListener('input', juster);
+  requestAnimationFrame(juster);
+  return felt;
+}
 const fanerad = document.getElementById('faner');
 const rolig = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -162,8 +173,27 @@ const IKONER = {
   idag: () => ikon('M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z'),
   kalender: () => ikon('M4 6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v12A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5z', 'M8 3v4', 'M16 3v4', 'M4 10h16'),
   glasset: () => ikon('M8.5 3h7', 'M7 7.5A1.5 1.5 0 0 1 8.5 6h7A1.5 1.5 0 0 1 17 7.5V19a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z', 'M10 14h.01', 'M14 16h.01'),
-  oss: () => ikon('M21 11.5a7.5 7.5 0 0 1-11 6.6L4 20l1.9-5.1A7.5 7.5 0 1 1 21 11.5z'),
+  meldinger: () => ikon('M21 11.5a7.5 7.5 0 0 1-11 6.6L4 20l1.9-5.1A7.5 7.5 0 1 1 21 11.5z'),
+  tannhjul: () => ikon('M12 15.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8z', 'M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.2a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.4 14h-.2a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.2-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 3.4v-.2a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.2a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.3 1z'),
+  tilbake: () => ikon('M15 19l-7-7 7-7'),
 };
+
+/**
+ * Toppen av en skjerm. Dato og tittel til venstre, veier ut til høyre.
+ * Navigasjon er ikke innhold, så den er lett i uttrykket.
+ */
+function hode(tittel, { stempel = null, handlinger = [] } = {}) {
+  return el('div', { class: 'topp' }, [
+    el('div', {}, [
+      stempel && el('p', { class: 'stempel', text: stempel }),
+      el('h1', { style: stempel ? 'margin-top:.3rem' : null, text: tittel }),
+    ]),
+    handlinger.length ? el('div', { class: 'hode' }, handlinger) : null,
+  ]);
+}
+
+const knappIkon = (navn, merkelapp, ved) =>
+  el('button', { type: 'button', 'aria-label': merkelapp, title: merkelapp, onclick: ved }, [IKONER[navn]()]);
 
 /* ---------- økta ---------- */
 
@@ -308,13 +338,15 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
 
   const stegGode = () => {
     const felt = [0, 1, 2].map((i) => {
-      const inn = el('input', {
-        type: 'text', value: utkast.gode[i], id: `god-${i}`,
+      // Ett ord eller tre linjer – begge deler skal få plass, og være lesbare
+      // etterpå. Derfor et felt som vokser, ikke en linje som klipper.
+      const inn = voksende(el('textarea', {
+        class: 'vokser', rows: 1, value: utkast.gode[i], id: `god-${i}`,
         placeholder: ['Noe som var fint …', 'Noe mer …', 'Og én til …'][i],
         oninput: (e) => { utkast.gode[i] = e.target.value; },
-      });
+      }));
       inn.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
+        if (e.key !== 'Enter' || e.shiftKey) return;
         e.preventDefault();
         document.getElementById(`god-${i + 1}`)?.focus();
       });
@@ -330,7 +362,7 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
         ]),
       ]);
     });
-    ramme('Tre gode ting', 'Små ting teller. Kaffen. Været i fem minutter.', felt);
+    ramme('Tre gode ting', 'Ett ord eller tre linjer – begge deler duger. Enter hopper videre.', felt);
   };
 
   const stegTungt = () => {
@@ -338,11 +370,11 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
     // på rad blir et skjema; dette blir et spørsmål.
     ramme(sporsmal, 'Begge feltene kan stå tomme.', [
       el('label', { for: 'svar', text: 'Svar' }),
-      el('textarea', {
-        value: utkast.svar, id: 'svar', rows: 3,
+      voksende(el('textarea', {
+        class: 'vokser', value: utkast.svar, id: 'svar', rows: 2,
         placeholder: 'Skriv om du vil …',
         oninput: (e) => { utkast.svar = e.target.value; },
-      }),
+      })),
       el('label', { for: 'tungt', style: 'margin-top:1.2rem', text: 'Var noe tungt i dag?' }),
       el('textarea', {
         value: utkast.tungt, id: 'tungt', rows: 3,
@@ -443,23 +475,37 @@ const godeTingListe = (gode) =>
   el('ul', { class: 'liste' }, gode.map((g) =>
     el('li', {}, [g.om_oss && el('span', { class: 'merke', text: '💞' }), g.tekst])));
 
-/** Dagen slik den vises når man trykker på den i kalenderen. */
-function dagsKort(dag, { egen }) {
-  if (!dag) return el('p', { class: 'svak liten', style: 'margin:.9rem 0 0', text: 'Ingenting ført denne dagen.' });
+/** Dagen satt til å leses – ikke en liste med felter. */
+function dagsark(dag, { egen }) {
+  if (!dag) return el('p', { class: 'hjelp', style: 'margin-top:.9rem', text: 'Ingenting ført denne dagen.' });
   if (dag.privat && !egen) {
-    return el('p', { class: 'svak liten', style: 'margin:.9rem 0 0', text: 'Ført, men holdt for seg selv.' });
+    return el('p', { class: 'hjelp', style: 'margin-top:.9rem', text: 'Ført, men holdt for seg selv.' });
   }
-  return el('div', { style: 'margin-top:.9rem' }, [
-    el('p', { class: 'stempel', text: datoOrd(dag.dato) }),
-    el('h3', { style: 'margin-top:.4rem', text: `${humorFjes(dag.humor)} ${humorOrd(dag.humor)}${dag.privat ? ' · privat' : ''}` }),
-    dag.gode_ting?.length ? godeTingListe(dag.gode_ting) : null,
-    dag.svar && el('div', { style: 'margin-top:.8rem' }, [
-      el('p', { class: 'stempel', text: dag.sporsmal }),
-      el('p', { style: 'margin:.35rem 0 0', text: dag.svar }),
+
+  return el('div', { class: 'ark', style: 'margin-top:1.1rem' }, [
+    el('p', { class: 'dato', text: datoOrd(dag.dato, { year: 'numeric' }) }),
+    el('p', { class: 'humor-linje' }, [
+      el('em', { text: humorFjes(dag.humor) }),
+      `${humorOrd(dag.humor)}${dag.privat ? ' · bare for henne' : ''}`,
     ]),
-    dag.holdt_gode && el('p', { class: 'liten svak', text: 'De gode tingene beholdt hun for seg selv.' }),
-    dag.tungt && el('p', { class: 'sendes', style: 'margin-top:.7rem', text: dag.tungt }),
-    dag.holdt_tungt && el('p', { class: 'liten svak', style: 'margin-top:.7rem', text: 'Noe var tungt. Det er ikke delt.' }),
+    dag.behov && el('p', { class: 'liten svak', style: 'margin:-.6rem 0 1rem' }, [
+      el('strong', { text: 'Trengte: ' }),
+      (tilstand?.behov?.[dag.behov]?.etikett ?? dag.behov).toLowerCase(),
+    ]),
+    dag.gode_ting?.length
+      ? el('ul', { class: 'gode' }, dag.gode_ting.map((g) =>
+        el('li', { 'data-oss': g.om_oss ? 'ja' : null }, [g.om_oss && '💞', g.tekst])))
+      : null,
+    dag.holdt_gode && el('p', { class: 'hjelp', text: 'De gode tingene beholdt hun for seg selv.' }),
+    dag.svar && el('div', { class: 'felt' }, [
+      el('p', { class: 'stempel', text: dag.sporsmal }),
+      el('p', { text: dag.svar }),
+    ]),
+    dag.tungt && el('div', { class: 'felt' }, [
+      el('p', { class: 'stempel', text: 'Det som var tungt' }),
+      el('p', { text: dag.tungt }),
+    ]),
+    dag.holdt_tungt && el('p', { class: 'hjelp', text: 'Noe var tungt. Det er ikke delt.' }),
     mediekort(dag, { egen }),
   ]);
 }
@@ -577,7 +623,7 @@ const FANER = [
   { id: 'idag', navn: 'I dag' },
   { id: 'kalender', navn: 'Kalender' },
   { id: 'glasset', navn: 'Glasset' },
-  { id: 'oss', navn: 'Oss' },
+  { id: 'meldinger', navn: 'Meldinger' },
 ];
 
 function uleste(t) {
@@ -594,7 +640,7 @@ function tegnFaner(t) {
       onclick: () => { fane = f.id; visApp(t); },
     }, [
       IKONER[f.id](),
-      f.id === 'oss' && n > 0 && el('span', { class: 'duppedott' }),
+      f.id === 'meldinger' && n > 0 && el('span', { class: 'duppedott' }),
       el('span', { text: f.navn }),
     ])));
 }
@@ -602,7 +648,7 @@ function tegnFaner(t) {
 function visApp(t) {
   tilstand = t;
   tegnFaner(t);
-  const tegner = { idag: faneIdag, kalender: faneKalender, glasset: faneGlasset, oss: faneOss }[fane];
+  const tegner = { idag: faneIdag, kalender: faneKalender, glasset: faneGlasset, meldinger: faneMeldinger }[fane];
   tegner(t);
   app.firstElementChild?.classList.add('fane-inn');
 }
@@ -691,17 +737,15 @@ function faneIdag(t) {
     ]);
 
     tegn(
-      el('div', { class: 'topp' }, [
-        el('div', {}, [
-          el('p', { class: 'stempel', text: datoOrd(t.dato, { year: undefined }) }),
-          el('h1', { style: 'margin-top:.3rem', text: 'God kveld, Lykke' }),
-        ]),
-        el('button', { class: 'blank liten', type: 'button', onclick: loggUt, text: 'Logg ut' }),
-      ]),
+      hode('God kveld, Lykke', {
+        stempel: datoOrd(t.dato, { year: undefined }),
+        handlinger: [knappIkon('tannhjul', 'Innstillinger', () => visInnstillinger(t))],
+      }),
       hilsen,
       dagensKort,
       brev,
       ifjor,
+      onskelisteSeksjon(t),
     );
     return;
   }
@@ -714,13 +758,10 @@ function faneIdag(t) {
     : null;
 
   tegn(
-    el('div', { class: 'topp' }, [
-      el('div', {}, [
-        el('p', { class: 'stempel', text: datoOrd(t.dato, { year: undefined }) }),
-        el('h1', { style: 'margin-top:.3rem', text: 'Hos Lykke' }),
-      ]),
-      el('button', { class: 'blank liten', type: 'button', onclick: loggUt, text: 'Logg ut' }),
-    ]),
+    hode('Hos Lykke', {
+      stempel: datoOrd(t.dato, { year: undefined }),
+      handlinger: [knappIkon('tannhjul', 'Innstillinger', () => visInnstillinger(t))],
+    }),
     hilsen,
     el('div', { class: dag && !dag.privat && dag.humor <= 2 ? 'kort løftet' : 'kort' }, dag
       ? dag.privat
@@ -780,14 +821,88 @@ function faneIdag(t) {
         [...new Set(u.behov)].map((b) => t.behov[b].etikett.toLowerCase()).join(', '),
       ]),
     ]),
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Om oss' }),
+    el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Om oss' }),
       t.om_oss.length
-        ? el('ul', { class: 'liste', style: 'margin-top:.4rem' }, t.om_oss.slice(0, 5).map((g) =>
+        ? el('ul', { class: 'liste' }, t.om_oss.slice(0, 5).map((g) =>
           el('li', {}, [g.tekst, el('div', { class: 'liten svak', text: kortDato(g.dato) })])))
-        : el('p', { class: 'svak liten', style: 'margin:.5rem 0 0', text: 'Ingenting merket «om oss» ennå.' }),
+        : el('p', { class: 'hjelp', text: 'Ingenting merket «om oss» ennå.' }),
     ]),
+    onskelisteSeksjon(t),
+    brevSeksjon(t),
   );
+}
+
+/** Ting dere skal gjøre. Hører hjemme sammen med dagen, ikke med samtalen. */
+function onskelisteSeksjon(t) {
+  const felt = el('input', { type: 'text', id: 'onske', placeholder: 'Noe vi skal gjøre …' });
+  const leggTil = async () => {
+    const tekst = felt.value.trim();
+    if (!tekst) return;
+    felt.value = '';
+    try { await api('/onske', { metode: 'POST', kropp: { tekst } }); await start(); }
+    catch (e) { si(e.message); }
+  };
+  felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') leggTil(); });
+
+  const igjen = t.onsker.filter((o) => !o.gjort_kl).length;
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: `Ønskelista${igjen ? ` · ${igjen} igjen` : ''}` }),
+    t.onsker.length
+      ? el('div', { class: 'onsker' }, t.onsker.map((o) =>
+        el('div', { class: 'onske', 'data-gjort': o.gjort_kl ? 'ja' : null }, [
+          el('button', {
+            class: 'kryss', type: 'button',
+            'aria-label': o.gjort_kl ? 'Angre' : 'Huk av',
+            text: o.gjort_kl ? '✓' : '',
+            onclick: async () => {
+              try { await api(`/onske/${o.id}/gjort`, { metode: 'POST' }); await start(); }
+              catch (e) { si(e.message); }
+            },
+          }),
+          el('p', {}, [
+            o.tekst,
+            el('span', { class: 'hvem', text: ` · ${o.laget_av === t.hvem ? 'du' : (o.laget_av === 'lykke' ? 'Lykke' : 'Mathias')}` }),
+          ]),
+          el('button', {
+            class: 'blank fjern', type: 'button', text: '×', 'aria-label': 'Fjern',
+            onclick: async () => {
+              try { await api(`/onske/${o.id}`, { metode: 'DELETE' }); await start(); }
+              catch (e) { si(e.message); }
+            },
+          }),
+        ])))
+      : el('p', { class: 'hjelp', text: 'Tom foreløpig. Hva har dere lyst til?' }),
+    el('div', { class: 'skrivefelt', style: 'margin-top:.7rem' }, [
+      felt,
+      el('button', { class: 'hoved', type: 'button', onclick: leggTil, 'aria-label': 'Legg til', text: '+' }),
+    ]),
+  ]);
+}
+
+/** Brevene han legger inn på forhånd. */
+function brevSeksjon(t) {
+  const felt = el('textarea', { id: 'brev', placeholder: 'Noe hun skal lese når det er vanskelig …' });
+  const uåpnet = t.brev.filter((b) => !b.apnet_kl).length;
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Brev til en dårlig dag' }),
+    el('p', {
+      class: 'hjelp',
+      text: `${uåpnet === 0 ? 'Ingen ligger klare' : uåpnet === 1 ? 'Ett ligger klart' : `${uåpnet} ligger klare`}. Hun får tilbud om ett når dagen er tung.`,
+    }),
+    felt,
+    el('button', {
+      class: 'hoved', type: 'button', style: 'margin-top:.7rem', text: 'Legg i glasset',
+      onclick: async () => {
+        if (!felt.value.trim()) return si('Tomt brev.');
+        try { await api('/brev', { metode: 'POST', kropp: { tekst: felt.value } }); si('Lagt inn.'); await start(); }
+        catch (e) { si(e.message); }
+      },
+    }),
+    t.brev.length ? el('ul', { class: 'liste', style: 'margin-top:.9rem' }, t.brev.map((b) =>
+      el('li', { class: 'liten svak' },
+        `${kortDato(b.laget_kl.slice(0, 10))} – ${b.apnet_kl ? `åpnet ${kortDato(b.apnet_kl.slice(0, 10))}` : 'ligger klart'}`))) : null,
+  ]);
 }
 
 /* ---------- fane: kalender ---------- */
@@ -842,7 +957,7 @@ function faneKalender(t) {
     .sort((a, b) => a.dato.localeCompare(b.dato));
 
   tegn(
-    el('div', { class: 'topp' }, [el('h1', { text: 'Kalender' })]),
+    hode('Kalender', { handlinger: [knappIkon('tannhjul', 'Innstillinger', () => visInnstillinger(t))] }),
     el('div', { class: 'kort' }, [
       el('div', { class: 'maned-topp' }, [
         el('button', { type: 'button', onclick: () => byttMåned(-1), 'aria-label': 'Forrige måned', text: '‹' }),
@@ -858,30 +973,78 @@ function faneKalender(t) {
         class: 'liten svak', style: 'margin:.9rem 0 0',
         text: 'Trykk på en tom dag som har vært, så kan du fylle den ut.',
       }),
-      valgtDag && dagsKort(valgtDag.humor || valgtDag.privat ? valgtDag : null, { egen: t.hvem === 'lykke' }),
+      valgtDag && dagsark(valgtDag.humor || valgtDag.privat ? valgtDag : null, { egen: t.hvem === 'lykke' }),
     ]),
-    siste30.length >= 3 && el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Siste 30 dagene' }),
+    siste30.length >= 3 && el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Siste 30 dagene' }),
       stemningskurve(siste30),
     ]),
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Denne uka' }),
-      el('div', { class: 'tall-rad', style: 'margin-top:.7rem' }, [
-        el('div', { class: 'tall-rute' }, [
-          el('b', { class: 'tall', text: t.uke.snitt == null ? '–' : t.uke.snitt.toFixed(1) }),
-          el('span', { text: 'i snitt av 5' }),
-        ]),
-        el('div', { class: 'tall-rute' }, [
-          el('b', { class: 'tall', text: String(t.uke.ført) }),
-          el('span', { text: 'dager ført' }),
-        ]),
-        el('div', { class: 'tall-rute' }, [
-          el('b', { class: 'tall', text: String(t.uke.gode) }),
-          el('span', { text: 'gode dager' }),
-        ]),
-      ]),
-    ]),
+    sammendragSeksjon(t),
   );
+}
+
+let periode = 'uke';
+
+/**
+ * Sammendraget for en periode.
+ *
+ * Bare tall og hennes egne ord. Ingen automatiske tolkninger – de blir fort
+ * tullete, og verre: de blir feil om et menneske.
+ */
+function sammendragSeksjon(t) {
+  const rute = el('div', { class: 'laster liten', text: 'Regner …' });
+
+  const hent = async () => {
+    try {
+      const d = await api(`/sammendrag?periode=${periode}`);
+      rute.className = '';
+      rute.replaceChildren(...(d.ført ? [
+        el('div', { class: 'tall-rad' }, [
+          el('div', { class: 'tall-rute' }, [
+            el('b', { class: 'tall', text: d.snitt == null ? '–' : d.snitt.toFixed(1).replace('.', ',') }),
+            el('span', { text: 'i snitt av 5' }),
+          ]),
+          el('div', { class: 'tall-rute' }, [
+            el('b', { class: 'tall', text: String(d.ført) }),
+            el('span', { text: 'dager ført' }),
+          ]),
+          el('div', { class: 'tall-rute' }, [
+            el('b', { class: 'tall', text: String(d.antall_gode_ting) }),
+            el('span', { text: 'gode ting' }),
+          ]),
+        ]),
+        d.beste && el('div', { class: 'hoydepunkt' }, [
+          el('p', { class: 'dato', text: `Beste dagen · ${datoOrd(d.beste.dato, { year: undefined })}` }),
+          el('p', { text: d.beste.gode_ting[0]?.tekst ?? `${d.beste.humor} av 5` }),
+        ]),
+        d.tyngste && el('div', { class: 'hoydepunkt', 'data-slag': 'tung' }, [
+          el('p', { class: 'dato', text: `Tyngste dagen · ${datoOrd(d.tyngste.dato, { year: undefined })}` }),
+          el('p', { text: `${d.tyngste.humor} av 5` }),
+        ]),
+        d.behov.length && el('p', { class: 'liten svak', style: 'margin:.8rem 0 0' }, [
+          'Bedt om: ',
+          d.behov.map((b) => `${t.behov[b.behov].etikett.toLowerCase()}${b.antall > 1 ? ` ×${b.antall}` : ''}`).join(', '),
+        ]),
+        d.private ? el('p', { class: 'hjelp', style: 'margin:.5rem 0 0', text: `${d.private} dager er holdt for seg selv.` }) : null,
+        d.antall_bilder ? el('p', { class: 'hjelp', style: 'margin:.3rem 0 0', text: `${d.antall_bilder} bilder og lydklipp.` }) : null,
+      ].filter(Boolean) : [el('p', { class: 'hjelp', text: 'Ingenting ført i denne perioden.' })]));
+    } catch (e) { si(e.message); }
+  };
+
+  hent();
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Sammendrag' }),
+    el('div', { class: 'periode' }, [['uke', 'Uka'], ['maned', 'Måneden'], ['ar', 'Året']].map(([id, navn]) =>
+      el('button', {
+        type: 'button', text: navn, 'aria-pressed': String(periode === id),
+        onclick: (e) => {
+          periode = id;
+          for (const b of e.target.parentElement.children) b.setAttribute('aria-pressed', String(b === e.target));
+          hent();
+        },
+      }))),
+    rute,
+  ]);
 }
 
 /** Stemningen som en kurve. Y-aksen er 1–5 og står fast, så formen betyr noe. */
@@ -923,6 +1086,8 @@ function stemningskurve(dager) {
 
 let arkivSok = '';
 let arkivOss = false;
+let forrigeLapp = null;
+let arkivAlle = false;
 
 function faneGlasset(t) {
   const erLykke = t.hvem === 'lykke';
@@ -937,7 +1102,7 @@ function faneGlasset(t) {
       if (arkivOss) p.set('oss', 'ja');
       const { treff, antall: n } = await api(`/arkiv?${p}`);
       arkivrute.replaceChildren(...(treff.length
-        ? treff.slice(0, 60).map((g, i) => {
+        ? treff.slice(0, arkivAlle ? 200 : 12).map((g, i) => {
           const rad = el('div', { class: 'arkiv-rad', 'data-oss': g.om_oss ? 'ja' : null }, [
             el('time', { datetime: g.dato, text: kortDato(g.dato) }),
             el('p', { text: g.tekst }),
@@ -946,11 +1111,14 @@ function faneGlasset(t) {
           return rad;
         })
         : [el('p', { class: 'svak liten', text: arkivSok ? `Ingen treff på «${arkivSok}».` : 'Ingenting her ennå.' })]));
-      if (treff.length) {
-        arkivrute.append(el('p', {
-          class: 'liten svak midt', style: 'margin:.6rem 0 0',
-          text: n > 60 ? `Viser 60 av ${n}` : `${n} ${n === 1 ? 'ting' : 'ting'}`,
+      if (treff.length > 12 && !arkivAlle) {
+        arkivrute.append(el('button', {
+          class: 'blank', type: 'button', style: 'margin-top:.4rem',
+          onclick: () => { arkivAlle = true; hentArkiv(); },
+          text: `Vis alle ${n}`,
         }));
+      } else if (treff.length) {
+        arkivrute.append(el('p', { class: 'liten svak midt', style: 'margin:.6rem 0 0', text: `${n} ting` }));
       }
     } catch (e) { si(e.message); }
   };
@@ -958,7 +1126,7 @@ function faneGlasset(t) {
   const sokefelt = el('input', {
     type: 'search', value: arkivSok, id: 'sok',
     placeholder: 'Søk i alt som er skrevet …',
-    oninput: (e) => { arkivSok = e.target.value; klar(); },
+    oninput: (e) => { arkivSok = e.target.value; arkivAlle = false; klar(); },
   });
   let tid;
   const klar = () => { clearTimeout(tid); tid = setTimeout(hentArkiv, 220); };
@@ -966,7 +1134,7 @@ function faneGlasset(t) {
   const tall = el('span', { class: 'stor-tall', text: '0' });
 
   tegn(
-    el('div', { class: 'topp' }, [el('h1', { text: 'Glasset' })]),
+    hode('Glasset', { handlinger: [knappIkon('tannhjul', 'Innstillinger', () => visInnstillinger(t))] }),
     el('div', { class: 'kort' }, [
       el('div', { class: 'glass-scene' }, [glassFigur(antall, 'glass')]),
       el('p', { class: 'midt', style: 'margin:0' }, [
@@ -978,7 +1146,8 @@ function faneGlasset(t) {
         class: 'hoved', type: 'button', style: 'margin-top:1rem', text: 'Trekk en lapp',
         onclick: async () => {
           try {
-            const g = await api('/glasset');
+            const g = await api(`/glasset${forrigeLapp ? `?forrige=${encodeURIComponent(forrigeLapp)}` : ''}`);
+          forrigeLapp = g.tekst ?? null;
             lapperute.replaceChildren(g.tom
               ? el('p', { class: 'svak liten', style: 'margin:.9rem 0 0', text: 'Glasset er tomt ennå. Det fyller seg opp.' })
               : el('div', { class: 'lapp' }, [`«${g.tekst}»`, el('span', { class: 'når', text: g.når })]));
@@ -987,8 +1156,9 @@ function faneGlasset(t) {
       }),
       lapperute,
     ]),
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Alt som er skrevet' }),
+    (erLykke || t.delt) && sporsmalSeksjon(t),
+    el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Alt som er skrevet' }),
       el('div', { style: 'margin:.7rem 0' }, [sokefelt]),
       el('div', { class: 'brikker' }, [
         el('button', {
@@ -1002,9 +1172,9 @@ function faneGlasset(t) {
       ]),
       arkivrute,
     ]),
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Årsboka' }),
-      el('p', { class: 'svak liten', style: 'margin:.5rem 0 .8rem', text: 'Hele året på én side, å lese fra topp til bunn.' }),
+    el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Årsboka' }),
+      el('p', { class: 'hjelp', text: 'Hele året på én side, å lese fra topp til bunn.' }),
       el('div', { class: 'rad' }, [Number(t.dato.slice(0, 4)), Number(t.dato.slice(0, 4)) - 1].map((ar) =>
         el('button', { type: 'button', text: String(ar), onclick: () => visArsbok(t, ar) }))),
     ]),
@@ -1014,6 +1184,89 @@ function faneGlasset(t) {
 }
 
 /** Hele året på én side. Den eneste skjermen som er laget for å leses. */
+/**
+ * Spørsmålslista hennes.
+ *
+ * Seksti spørsmål i en liste er en oppgave. Derfor velger hun selv kategori
+ * og hvor mange hun orker å se – og forslagene byttes ut hver gang.
+ */
+function sporsmalSeksjon(t) {
+  const rute = el('div');
+  let kat = null;
+  let antall = 3;
+
+  const hent = async () => {
+    try {
+      const p = new URLSearchParams({ antall: String(antall) });
+      if (kat) p.set('kat', kat);
+      tegnLista(await api(`/sporsmal?${p}`));
+    } catch (e) { si(e.message); }
+  };
+
+  const svarPa = (spm, gammelt) => {
+    const felt = voksende(el('textarea', {
+      class: 'vokser', rows: 2, value: gammelt ?? '',
+      placeholder: 'Skriv så langt eller kort du vil …',
+    }));
+    const lagre = async () => {
+      try {
+        await api('/sporsmal', { metode: 'POST', kropp: { k: spm.k, tekst: felt.value } });
+        si(felt.value.trim() ? 'Svart.' : 'Fjernet.');
+        hent();
+      } catch (e) { si(e.message); }
+    };
+    tegn(
+      hode(spm.t, { stempel: t.behov ? 'Spørsmål' : null, handlinger: [knappIkon('tilbake', 'Tilbake', () => visApp(t))] }),
+      el('div', { class: 'kort' }, [
+        felt,
+        el('div', { class: 'stegrad' }, [
+          el('button', { class: 'hoved', type: 'button', onclick: lagre, text: 'Lagre' }),
+          el('button', { class: 'blank', type: 'button', onclick: () => visApp(t), text: 'Avbryt' }),
+        ]),
+      ]),
+    );
+    felt.focus();
+  };
+
+  const tegnLista = (d) => {
+    const katValg = [['Alle', null], ...Object.entries(d.kategorier).map(([k, navn]) => [navn, k])];
+    rute.replaceChildren(
+      el('div', { class: 'brikker' }, katValg.map(([navn, k]) =>
+        el('button', {
+          type: 'button', text: navn, 'aria-pressed': String(kat === k),
+          onclick: () => { kat = k; hent(); },
+        }))),
+      el('div', { class: 'brikker', style: 'margin-top:.5rem' }, [3, 10, 20, 30].map((n) =>
+        el('button', {
+          type: 'button', text: `${n}`, 'aria-pressed': String(antall === n),
+          'aria-label': `Vis ${n} spørsmål`,
+          onclick: () => { antall = n; hent(); },
+        }))),
+      el('p', { class: 'hjelp', style: 'margin:.8rem 0 .6rem', text: `${d.ferdig} svart · ${d.igjen} igjen` }),
+      el('div', { class: 'spm-liste' }, d.forslag.map((spm) =>
+        el('button', { class: 'spm', type: 'button', text: spm.t, onclick: () => svarPa(spm, null) }))),
+      d.forslag.length ? el('button', {
+        class: 'blank', type: 'button', style: 'margin-top:.6rem', onclick: hent, text: '↻ Vis andre',
+      }) : el('p', { class: 'hjelp', text: 'Du har svart på alle i denne kategorien.' }),
+      d.svarte.length ? el('div', { style: 'margin-top:1.4rem' }, [
+        el('p', { class: 'stempel', text: 'Svarte' }),
+        el('div', { class: 'spm-liste', style: 'margin-top:.6rem' }, d.svarte.slice(0, 20).map((spm) =>
+          el('button', {
+            class: 'spm', type: 'button', 'data-svart': 'ja',
+            onclick: () => svarPa(spm, spm.svar),
+          }, [spm.t, el('span', { class: 'svaret', text: spm.svar })]))),
+      ]) : null,
+    );
+  };
+
+  hent();
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Spørsmål' }),
+    el('p', { class: 'hjelp', text: 'Svar når du vil. Svarene legger seg i arkivet sammen med de gode tingene.' }),
+    rute,
+  ]);
+}
+
 async function visArsbok(t, ar) {
   fanerad.replaceChildren();
   tegn(el('p', { class: 'laster', text: 'Blar opp …' }));
@@ -1039,10 +1292,10 @@ async function visArsbok(t, ar) {
   }
 }
 
-/* ---------- fane: oss ---------- */
+/* ---------- fane: meldinger ---------- */
 
-function faneOss(t) {
-  const erLykke = t.hvem === 'lykke';
+/** Samtalen, som en samtale. Skrivefeltet nederst, alt annet er flyttet ut. */
+function faneMeldinger(t) {
   // Merkes lest med én gang fanen åpnes. Duppedotten skal bort nå, ikke ved
   // neste henting – ellers står den og lyser over meldinger man leser.
   if (uleste(t)) {
@@ -1051,8 +1304,9 @@ function faneOss(t) {
     tegnFaner(t);
   }
 
-  const felt = el('textarea', { id: 'melding', placeholder: 'Skriv noe …', rows: 1 });
-  const sendMelding = async () => {
+  const felt = el('textarea', { id: 'melding', class: 'vokser', placeholder: 'Skriv noe …', rows: 1 });
+  voksende(felt);
+  const send = async () => {
     const tekst = felt.value.trim();
     if (!tekst) return;
     felt.value = '';
@@ -1060,126 +1314,83 @@ function faneOss(t) {
     catch (e) { si(e.message); }
   };
   felt.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMelding(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
   });
 
-  const onskefelt = el('input', { type: 'text', id: 'onske', placeholder: 'Noe vi skal gjøre …' });
-  const leggTil = async () => {
-    const tekst = onskefelt.value.trim();
-    if (!tekst) return;
-    onskefelt.value = '';
-    try { await api('/onske', { metode: 'POST', kropp: { tekst } }); await start(); }
-    catch (e) { si(e.message); }
-  };
-  onskefelt.addEventListener('keydown', (e) => { if (e.key === 'Enter') leggTil(); });
-
-  const igjen = t.onsker.filter((o) => !o.gjort_kl).length;
-
   tegn(
-    el('div', { class: 'topp' }, [el('h1', { text: 'Oss' })]),
-
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Meldinger' }),
+    hode('Meldinger', { handlinger: [knappIkon('tannhjul', 'Innstillinger', () => visInnstillinger(t))] }),
+    el('div', { class: 'chat' }, [
       t.meldinger.length
-        ? el('div', { class: 'samtale', style: 'margin-top:.8rem' }, t.meldinger.slice(-18).flatMap((m, i) => {
-          const mine = (m.reaksjoner ?? []).find((r) => r.hvem === t.hvem)?.tegn ?? null;
-          const velger = el('div', { class: 'velgreaksjon', hidden: true }, REAKSJONER.map((tegn) =>
-            el('button', {
-              type: 'button',
-              text: tegn,
-              'aria-pressed': String(mine === tegn),
-              onclick: async () => {
-                try { await api(`/melding/${m.id}/reaksjon`, { metode: 'POST', kropp: { tegn } }); await start(); }
-                catch (e) { si(e.message); }
-              },
-            })));
-
-          const boble = el('div', {
-            class: 'boble',
-            'data-min': m.fra === t.hvem ? 'ja' : 'nei',
-            // Ett trykk på bobla, og valgene kommer fram. Ingen skjult
-            // langtrykking man må vite om på forhånd.
-            onclick: () => { velger.hidden = !velger.hidden; },
-          }, [
-            m.tekst,
-            el('time', { datetime: m.laget_kl, text: `${kortDato(m.laget_kl.slice(0, 10))} ${klokkeslett(m.laget_kl)}` }),
-            (m.reaksjoner ?? []).length
-              ? el('div', { class: 'reaksjoner' }, [...new Set(m.reaksjoner.map((r) => r.tegn))])
-              : null,
-          ]);
-          boble.style.setProperty('--i', i);
-          return [boble, velger];
-        }))
-        : el('p', { class: 'svak liten', style: 'margin:.7rem 0' , text: 'Ingen meldinger ennå. Begynn du.' }),
+        ? samtale(t)
+        : el('p', { class: 'svak liten midt', style: 'margin:3rem 0', text: 'Ingen meldinger ennå. Begynn du.' }),
       el('div', { class: 'skrivefelt' }, [
         felt,
-        el('button', { class: 'hoved', type: 'button', onclick: sendMelding, 'aria-label': 'Send', text: '↑' }),
+        el('button', { class: 'hoved', type: 'button', onclick: send, 'aria-label': 'Send', text: '↑' }),
       ]),
     ]),
+  );
+  app.querySelector('.samtale')?.lastElementChild?.scrollIntoView?.({ block: 'nearest' });
+}
 
-    el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: `Ønskelista · ${igjen} igjen` }),
-      t.onsker.length
-        ? el('div', { class: 'onsker', style: 'margin-top:.8rem' }, t.onsker.map((o) =>
-          el('div', { class: 'onske', 'data-gjort': o.gjort_kl ? 'ja' : null }, [
-            el('button', {
-              class: 'kryss', type: 'button',
-              'aria-label': o.gjort_kl ? 'Angre' : 'Huk av',
-              text: o.gjort_kl ? '✓' : '',
-              onclick: async () => {
-                try { await api(`/onske/${o.id}/gjort`, { metode: 'POST' }); await start(); }
-                catch (e) { si(e.message); }
-              },
-            }),
-            el('p', {}, [
-              o.tekst,
-              el('span', { class: 'hvem', text: ` · ${o.laget_av === t.hvem ? 'du' : (o.laget_av === 'lykke' ? 'Lykke' : 'Mathias')}` }),
-            ]),
-            el('button', {
-              class: 'blank fjern', type: 'button', text: '×', 'aria-label': 'Fjern',
-              onclick: async () => {
-                try { await api(`/onske/${o.id}`, { metode: 'DELETE' }); await start(); }
-                catch (e) { si(e.message); }
-              },
-            }),
-          ])))
-        : el('p', { class: 'svak liten', style: 'margin:.7rem 0', text: 'Tom foreløpig. Hva har dere lyst til?' }),
-      el('div', { class: 'skrivefelt' }, [
-        onskefelt,
-        el('button', { class: 'hoved', type: 'button', onclick: leggTil, 'aria-label': 'Legg til', text: '+' }),
-      ]),
-    ]),
+/** Boblene, med reaksjoner som svever over i stedet for å dytte. */
+function samtale(t) {
+  let åpen = null;
 
-    !erLykke && el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Brev til en dårlig dag' }),
-      el('p', {
-        class: 'svak liten', style: 'margin:.5rem 0 .7rem',
-        text: (() => {
-          const n = t.brev.filter((b) => !b.apnet_kl).length;
-          const hvor = n === 0 ? 'Ingen ligger klare' : n === 1 ? 'Ett ligger klart' : `${n} ligger klare`;
-          return `${hvor}. Hun får tilbud om ett når dagen er tung.`;
-        })(),
-      }),
-      el('textarea', { id: 'brev', placeholder: 'Noe hun skal lese når det er vanskelig …' }),
+  return el('div', { class: 'samtale' }, t.meldinger.slice(-40).map((m, i) => {
+    const mine = (m.reaksjoner ?? []).find((r) => r.hvem === t.hvem)?.tegn ?? null;
+
+    const velger = el('div', { class: 'velgreaksjon', hidden: true }, REAKSJONER.map((tegn) =>
       el('button', {
-        class: 'hoved', type: 'button', style: 'margin-top:.7rem', text: 'Legg i glasset',
-        onclick: async () => {
-          const rute = document.getElementById('brev');
-          if (!rute.value.trim()) return si('Tomt brev.');
-          try { await api('/brev', { metode: 'POST', kropp: { tekst: rute.value } }); si('Lagt inn.'); await start(); }
-          catch (e) { si(e.message); }
+        type: 'button',
+        text: tegn,
+        'aria-pressed': String(mine === tegn),
+        onclick: async (e) => {
+          e.stopPropagation();
+          try { await api(`/melding/${m.id}/reaksjon`, { metode: 'POST', kropp: { tegn } }); await start(); }
+          catch (feil) { si(feil.message); }
         },
-      }),
-      t.brev.length && el('ul', { class: 'liste', style: 'margin-top:.9rem' }, t.brev.map((b) =>
-        el('li', { class: 'liten svak' },
-          `${kortDato(b.laget_kl.slice(0, 10))} – ${b.apnet_kl ? `åpnet ${kortDato(b.apnet_kl.slice(0, 10))}` : 'ligger klart'}`))),
-    ]),
+      })));
 
+    const boble = el('div', { class: 'boble', 'data-min': m.fra === t.hvem ? 'ja' : 'nei' }, [
+      m.tekst,
+      el('time', { datetime: m.laget_kl, text: `${kortDato(m.laget_kl.slice(0, 10))} ${klokkeslett(m.laget_kl)}` }),
+      (m.reaksjoner ?? []).length
+        ? el('div', { class: 'reaksjoner' }, [...new Set(m.reaksjoner.map((r) => r.tegn))])
+        : null,
+    ]);
+    boble.style.setProperty('--i', i);
+
+    const rad = el('div', {
+      class: 'boblerad',
+      'data-min': m.fra === t.hvem ? 'ja' : 'nei',
+      // Én velger av gangen. To åpne samtidig er bare rot.
+      onclick: () => {
+        if (åpen && åpen !== velger) åpen.hidden = true;
+        velger.hidden = !velger.hidden;
+        åpen = velger.hidden ? null : velger;
+      },
+    }, [velger, boble]);
+    return rad;
+  }));
+}
+
+/* ---------- innstillinger ---------- */
+
+/** Brytere og nøkler, samlet ett sted i stedet for å ligge blant innholdet. */
+function visInnstillinger(t) {
+  fanerad.replaceChildren();
+  tegn(
+    hode('Innstillinger', { handlinger: [knappIkon('tilbake', 'Tilbake', () => visApp(t))] }),
     delingKort(t),
-    eksportKort(),
     kodeKort(t),
+    eksportKort(),
+    el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Økta' }),
+      el('button', { class: 'blank', type: 'button', onclick: loggUt, text: 'Logg ut' }),
+    ]),
   );
 }
+
 
 /**
  * Delingen.
@@ -1189,8 +1400,8 @@ function faneOss(t) {
  */
 function delingKort(t) {
   if (t.hvem !== 'lykke') {
-    return el('div', { class: 'kort' }, [
-      el('p', { class: 'stempel', text: 'Deling' }),
+    return el('div', { class: 'seksjon' }, [
+      el('h2', { text: 'Deling' }),
       el('p', { style: 'margin:.6rem 0 0' }, [
         el('strong', { text: t.delt ? 'Delt modus er på. ' : 'Lykke velger dag for dag. ' }),
         t.delt
@@ -1209,9 +1420,9 @@ function delingKort(t) {
     } catch (e) { si(e.message); }
   };
 
-  return el('div', { class: 'kort' }, [
-    el('p', { class: 'stempel', text: 'Deling' }),
-    el('p', { class: 'svak liten', style: 'margin:.6rem 0 .8rem', text: 'Hvor mye Mathias får se. Du kan snu den når du vil.' }),
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Deling' }),
+    el('p', { class: 'hjelp', text: 'Hvor mye Mathias får se. Du kan snu den når du vil.' }),
     el('div', { class: 'brikker' }, [
       el('button', {
         type: 'button', 'aria-pressed': String(!t.delt),
@@ -1234,9 +1445,9 @@ function delingKort(t) {
 /** Alt som ligger her, som én fil. Data man ikke kan få ut, kan man miste. */
 function eksportKort() {
   if (!KAN_FILER) return null;
-  return el('div', { class: 'kort' }, [
-    el('p', { class: 'stempel', text: 'Sikkerhetskopi' }),
-    el('p', { class: 'svak liten', style: 'margin:.5rem 0 .8rem', text: 'Alt som ligger her, som én fil. Legg den et trygt sted.' }),
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Sikkerhetskopi' }),
+    el('p', { class: 'hjelp', text: 'Alt som ligger her, som én fil. Legg den et trygt sted.' }),
     el('button', {
       class: 'hoved', type: 'button', text: '⬇️ Last ned alt',
       onclick: async () => {
@@ -1288,8 +1499,8 @@ function kodeKort(t) {
     ]);
   };
 
-  return el('div', { class: 'kort' }, [
-    el('p', { class: 'stempel', text: 'Koder' }),
+  return el('div', { class: 'seksjon' }, [
+    el('h2', { text: 'Koder' }),
     t.kan_bytte_egen && rad(t.hvem, 'Ny kode for deg selv', 'Bytt'),
     t.kan_bytte_hennes && t.hvem !== 'lykke' && rad('lykke', 'Ny kode for Lykke', 'Sett'),
     t.kan_bytte_hennes && t.hvem !== 'lykke' && el('p', {

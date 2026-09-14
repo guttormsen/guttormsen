@@ -235,9 +235,22 @@ test('å rette dagen sender ikke varselet på nytt', async () => {
   const hennes = await loggInn('lykke');
   const dag = { humor: 2, gode_ting: [{ tekst: 'kaffe' }] };
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: dag });
-  const førsteRunde = sendte.length;
+  assert.equal(sendte.filter((m) => m.text.includes('tung dag')).length, 1);
+
+  sendte.length = 0;
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { ...dag, gode_ting: [{ tekst: 'kaffe og sol' }] } });
-  assert.equal(sendte.length, førsteRunde, 'samme dag skal bare varsle én gang');
+
+  // Alarmen går ikke igjen, men endringen loggføres – stille.
+  assert.equal(sendte.filter((m) => m.text.includes('tung dag')).length, 0);
+  const endring = sendte.filter((m) => m.text.includes('endret'));
+  assert.equal(endring.length, 1);
+  assert.equal(endring[0].disable_notification, true);
+  assert.ok(endring[0].text.includes('kaffe og sol'));
+
+  // Og ikke én gang til for hvert tastetrykk i samme time.
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { ...dag, gode_ting: [{ tekst: 'kaffe, sol og en tur' }] } });
+  assert.deepEqual(sendte, []);
 });
 
 test('dager som ikke har vært, kan ikke føres', async () => {
@@ -850,7 +863,7 @@ test('/meny gir en meny med knapper', async () => {
   sendte.length = 0;
   await fraEier('/meny');
   const data = knappene(sendte.at(-1));
-  for (const k of ['meny:idag', 'meny:uke', 'meny:glasset', 'meny:status', 'meny:onsker', 'meny:brev', 'meny:logginn', 'meny:lenkelykke']) {
+  for (const k of ['meny:idag', 'meny:sammendrag', 'meny:glasset', 'meny:sporsmal', 'meny:status', 'meny:onsker', 'meny:brev', 'meny:logginn', 'meny:lenkelykke', 'meny:eksport']) {
     assert.ok(data.includes(k), `mangler ${k}`);
   }
 });
@@ -1368,4 +1381,179 @@ test('spørsmålet følger datoen, også for en dag som ikke er skrevet', async 
   const t = await (await kall('/tilstand', { cookie })).json();
   assert.ok(t.sporsmal.length > 5);
   assert.notEqual(t.sporsmal, svar.sporsmal, 'ulike dager, ulike spørsmål');
+});
+
+/* ---------- spørsmålslista ---------- */
+
+test('lista gir tre om gangen, fra den kategorien hun velger', async () => {
+  const cookie = await loggInn('lykke');
+  const alt = await (await kall('/sporsmal', { cookie })).json();
+  assert.equal(alt.forslag.length, 3);
+  assert.equal(alt.igjen, 60);
+  assert.ok(Object.keys(alt.kategorier).includes('oss'));
+
+  const oss = await (await kall('/sporsmal?kat=oss', { cookie })).json();
+  assert.equal(oss.igjen, 12, 'tolv i hver kategori');
+  for (const s of oss.forslag) assert.equal(s.kat, 'oss');
+});
+
+test('forslagene byttes ut, så det ikke er de samme tre hver gang', async () => {
+  const cookie = await loggInn('lykke');
+  const sett = new Set();
+  for (let i = 0; i < 6; i += 1) {
+    const d = await (await kall('/sporsmal?kat=minner', { cookie })).json();
+    for (const s of d.forslag) sett.add(s.k);
+  }
+  assert.ok(sett.size > 3, `fikk bare ${sett.size} ulike spørsmål på seks forsøk`);
+});
+
+test('et svar lagres, teller ned, og forsvinner fra forslagene', async () => {
+  const cookie = await loggInn('lykke');
+  const før = await (await kall('/sporsmal?kat=oss', { cookie })).json();
+  const spm = før.forslag[0];
+
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: spm.k, tekst: 'Da du hentet meg i regnet.' } });
+
+  const etter = await (await kall('/sporsmal?kat=oss', { cookie })).json();
+  assert.equal(etter.igjen, 11);
+  assert.equal(etter.ferdig, 1);
+  assert.ok(!etter.forslag.some((s) => s.k === spm.k));
+  assert.deepEqual(etter.svarte.map((s) => s.svar), ['Da du hentet meg i regnet.']);
+});
+
+test('et tomt svar fjerner det som lå der', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: 13, tekst: 'noe' } });
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: 13, tekst: '   ' } });
+  const d = await (await kall('/sporsmal', { cookie })).json();
+  assert.equal(d.ferdig, 0);
+});
+
+test('ukjente spørsmål avvises, og bare hun svarer', async () => {
+  const hennes = await loggInn('lykke');
+  assert.equal((await kall('/sporsmal', { metode: 'POST', cookie: hennes, kropp: { k: 9999, tekst: 'hei' } })).status, 400);
+
+  const hans = await loggInn('mathias');
+  assert.equal((await kall('/sporsmal', { metode: 'POST', cookie: hans, kropp: { k: 1, tekst: 'hei' } })).status, 403);
+});
+
+test('svarene hennes havner i arkivet', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: 25, tekst: 'På hytta til bestemor' } });
+  const treff = await (await kall('/arkiv?sok=bestemor', { cookie })).json();
+  assert.equal(treff.antall, 1);
+  assert.ok(treff.treff[0].sporsmal.includes('lykkeligst'));
+});
+
+test('hun får si fra selv når hun svarer', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: 17, tekst: 'Å høre etter.' } });
+  assert.ok(sisteSvar().includes('Å høre etter.'));
+  assert.equal(sendte.at(-1).disable_notification, true);
+});
+
+/* ---------- sammendraget ---------- */
+
+test('sammendraget teller dagene og finner den beste og den tyngste', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  for (const [tilbake, humor, tekst] of [[0, 3, 'grei'], [1, 5, 'best'], [2, 1, 'verst'], [3, 4, 'fin']]) {
+    await kall('/dag', {
+      metode: 'POST', cookie,
+      kropp: { dato: flyttDag(idag, -tilbake), humor, gode_ting: [{ tekst }], behov: humor <= 2 ? 'klem' : null },
+    });
+  }
+
+  const d = await (await kall('/sammendrag?periode=uke', { cookie })).json();
+  assert.equal(d.ført, 4);
+  assert.equal(d.snitt, 3.25);
+  assert.equal(d.beste.humor, 5);
+  assert.equal(d.tyngste.humor, 1);
+  assert.deepEqual(d.beste.gode_ting.map((g) => g.tekst), ['best']);
+  assert.deepEqual(d.behov, [{ behov: 'klem', antall: 1 }]);
+  assert.equal(d.antall_gode_ting, 4);
+});
+
+test('sammendraget hans holder de private dagene utenfor', async () => {
+  const hennes = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { dato: idag, humor: 5, gode_ting: [{ tekst: 'delt' }] } });
+  await kall('/dag', {
+    metode: 'POST', cookie: hennes,
+    kropp: { dato: flyttDag(idag, -1), humor: 1, gode_ting: [{ tekst: 'hemmelig' }], privat: true },
+  });
+
+  const hans = await loggInn('mathias');
+  const d = await (await kall('/sammendrag?periode=uke', { cookie: hans })).json();
+  assert.equal(d.private, 1);
+  assert.equal(d.tyngste, null, 'den private dagen skal ikke bli tyngste dag');
+  assert.ok(!JSON.stringify(d).includes('hemmelig'));
+});
+
+test('/sammendrag i boten kommer med knapper for periode', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  const cookie = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'sol' }] } });
+
+  sendte.length = 0;
+  await fraEier('/sammendrag');
+  assert.ok(sisteSvar().includes('Sju siste dagene'));
+  const data = knappene(sendte.at(-1));
+  assert.ok(data.includes('meny:sammendrag:maned'));
+  assert.ok(data.includes('meny:sammendrag:ar'));
+});
+
+test('/sporsmal i boten viser hvor langt hun er kommet', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  const cookie = await loggInn('lykke');
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: 1, tekst: 'Å pakke sekker.' } });
+
+  sendte.length = 0;
+  await fraEier('/sporsmal');
+  assert.ok(sisteSvar().includes('1 av 60'));
+  assert.ok(sisteSvar().includes('Å pakke sekker.'));
+});
+
+test('hun velger hvor mange spørsmål hun vil se', async () => {
+  const cookie = await loggInn('lykke');
+  for (const antall of [3, 10, 20, 30]) {
+    const d = await (await kall(`/sporsmal?antall=${antall}`, { cookie })).json();
+    assert.equal(d.forslag.length, antall);
+    assert.equal(d.antall, antall);
+  }
+  // Et tall vi ikke tilbyr faller tilbake til tre.
+  const rart = await (await kall('/sporsmal?antall=7', { cookie })).json();
+  assert.equal(rart.forslag.length, 3);
+});
+
+test('en kategori gir aldri flere enn den har', async () => {
+  const cookie = await loggInn('lykke');
+  const d = await (await kall('/sporsmal?kat=oss&antall=30', { cookie })).json();
+  assert.equal(d.forslag.length, 12);
+});
+
+test('glasset trekker ikke den samme lappen to ganger på rad', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  for (const [i, tekst] of ['bålkaffe', 'sol på trappa', 'lang telefon'].entries()) {
+    await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -20 - i), humor: 4, gode_ting: [{ tekst }] } });
+  }
+
+  const først = await (await kall('/glasset', { cookie })).json();
+  for (let i = 0; i < 6; i += 1) {
+    const neste = await (await kall(`/glasset?forrige=${encodeURIComponent(først.tekst)}`, { cookie })).json();
+    assert.notEqual(neste.tekst, først.tekst);
+  }
+});
+
+test('med bare én lapp i glasset kommer den samme igjen', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -30), humor: 4, gode_ting: [{ tekst: 'den ene' }] } });
+  const d = await (await kall('/glasset?forrige=den%20ene', { cookie })).json();
+  assert.equal(d.tekst, 'den ene');
 });
