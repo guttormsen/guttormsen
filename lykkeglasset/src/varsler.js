@@ -25,6 +25,27 @@ export const BEHOV = {
   alene: { etikett: 'La meg være i fred i kveld', hast: false },
 };
 
+/**
+ * Knappene som ligger under de varslene det går an å gjøre noe med.
+ *
+ * Poenget er at et varsel om en tung dag ellers bare er en beskjed: du får
+ * vite at det er tungt, og så skjer det ingenting. Ett trykk her, og hun ser
+ * svaret i appen innen sekunder.
+ */
+export const SVAR = {
+  ringer: { knapp: 'Ringer deg nå', melding: 'Jeg ringer deg nå.' },
+  kommer: { knapp: 'Kommer hjem', melding: 'Jeg kommer hjem.' },
+  tenker: { knapp: 'Tenker på deg 🫂', melding: 'Tenker på deg.' },
+};
+
+const SVARKNAPPER = [
+  [['Ringer deg nå', 'svar:ringer'], ['Kommer hjem', 'svar:kommer']],
+  [['Tenker på deg 🫂', 'svar:tenker']],
+];
+
+/** Varsler man kan gjøre noe med, får knapper. Resten skal ikke mase. */
+const KNAPPER_FOR = new Set(['rop', 'tung', 'monster', 'morgen']);
+
 export const HUMOR = {
   1: 'veldig tung',
   2: 'tung',
@@ -82,7 +103,12 @@ export function varslerForDag({ dag, igår = null, sendt = [] }) {
   const ut = [];
   const legg = (slag, stille) => {
     if (sendt.includes(slag)) return;
-    ut.push({ slag, tekst: melding(slag, dag), stille });
+    ut.push({
+      slag,
+      tekst: melding(slag, dag),
+      stille,
+      knapper: KNAPPER_FOR.has(slag) ? SVARKNAPPER : null,
+    });
   };
 
   const hastebehov = dag.behov && BEHOV[dag.behov]?.hast;
@@ -111,6 +137,7 @@ const OVERSKRIFT = {
   monster: () => '🫂 Andre tunge dagen på rad',
   god: () => '✨ Lykke har hatt en skikkelig god dag',
   dagen: (dag) => `🫙 Lykke førte dagen – ${HUMOR[dag.humor]}`,
+  morgen: () => '☀️ God morgen. I går var tung hos Lykke',
 };
 
 /** Selve teksten i Telegram. Ren tekst – ingen formatering å rote med. */
@@ -136,8 +163,59 @@ export function melding(slag, dag) {
   if (slag === 'monster') {
     linjer.push('', 'To dager på rad. Kanskje det er verdt et spørsmål framfor å vente.');
   }
+  if (slag === 'morgen') {
+    linjer.push('', 'Varselet kom i går kveld, da du sov. Nå kan du gjøre noe med det.');
+  }
 
   return linjer.join('\n');
+}
+
+/**
+ * Puffet morgenen etter en tung kveld.
+ *
+ * Et varsel klokka 22:40 er lite verdt – da sover han. Dette er den samme
+ * beskjeden, levert på et tidspunkt den kan brukes til noe.
+ */
+export function morgenPuff(dag) {
+  return { tekst: melding('morgen', dag), knapper: SVARKNAPPER };
+}
+
+const snittOrd = (n) => (n == null ? '–' : n.toFixed(1).replace('.', ','));
+
+/** Én melding i uka som sier noe en enkeltdag ikke kan. */
+export function ukesbrev(uke, godeTing) {
+  const linjer = [
+    '📆 Uka hos Lykke',
+    '',
+    `Snitt: ${snittOrd(uke.snitt)} av 5${uke.forrige_snitt == null ? '' : ` (uka før: ${snittOrd(uke.forrige_snitt)})`}`,
+    `${uke.ført} dager ført · ${uke.gode} gode · ${uke.tunge} tunge`,
+  ];
+  if (uke.behov.length) {
+    const teller = new Map();
+    for (const b of uke.behov) teller.set(b, (teller.get(b) ?? 0) + 1);
+    linjer.push('', 'Hun har bedt om:');
+    for (const [b, n] of teller) {
+      linjer.push(`  • ${BEHOV[b].etikett.toLowerCase()}${n > 1 ? ` (${n} ganger)` : ''}`);
+    }
+  }
+  if (godeTing) linjer.push('', `${godeTing} gode ting skrevet denne uka.`);
+
+  const retning = uke.snitt != null && uke.forrige_snitt != null ? uke.snitt - uke.forrige_snitt : null;
+  if (retning != null && Math.abs(retning) >= 0.4) {
+    linjer.push('', retning > 0 ? 'Det går oppover.' : 'Det har vært tyngre enn uka før.');
+  }
+  return linjer.join('\n');
+}
+
+/** Siste kvelden i året. Den eneste meldingen som blir bedre for hvert år. */
+export function arsbok(ar, antall, dager) {
+  return [
+    `🫙 ${ar} er i glasset.`,
+    '',
+    `${antall} gode ting, skrevet over ${dager} dager.`,
+    '',
+    'Årsboka ligger i appen, under Glasset. Les den sammen.',
+  ].join('\n');
 }
 
 /** Påminnelsen om at kveldsrunden ikke er fylt ut. Går stille. */

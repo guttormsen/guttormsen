@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS varsler (
   PRIMARY KEY (slag, dato)
 );
 
+-- Småting som må huskes mellom kjøringer: hvem som eier boten, sist brukte
+-- engangslenke. Nøkkel og verdi, ikke mer.
+CREATE TABLE IF NOT EXISTS oppsett (
+  nokkel TEXT PRIMARY KEY,
+  verdi  TEXT NOT NULL,
+  satt_kl TEXT NOT NULL
+);
+
 -- Innloggingsforsøk, slik at en kode på seks tegn ikke kan gjettes i ro og mak.
 CREATE TABLE IF NOT EXISTS forsok (
   id   INTEGER PRIMARY KEY AUTOINCREMENT,

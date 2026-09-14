@@ -1,34 +1,76 @@
 /**
- * Telegram. Én funksjon, ett kall.
+ * Telegram. Ut og inn.
  *
  * Token ligger som hemmelighet i Cloudflare, aldri i koden. Feil herfra skal
- * ikke velte det hun holder på med – blir meldingen liggende usendt, er det
+ * ikke velte det hun holder på med – blir en melding liggende usendt, er det
  * fortsatt viktigere at dagen ble lagret.
  */
 
-export async function sendTelegram(env, tekst, { stille = false } = {}) {
-  if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT_ID) {
-    console.warn('Telegram er ikke satt opp – hopper over varselet.');
-    return false;
+const api = (env, metode) => `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${metode}`;
+
+async function kall(env, metode, kropp) {
+  if (!env.TELEGRAM_TOKEN) {
+    console.warn('Telegram er ikke satt opp – hopper over.');
+    return null;
   }
   try {
-    const svar = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`, {
+    const svar = await fetch(api(env, metode), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: env.TELEGRAM_CHAT_ID,
-        text: tekst,
-        disable_notification: stille,
-        link_preview_options: { is_disabled: true },
-      }),
+      body: JSON.stringify(kropp),
     });
-    if (!svar.ok) {
-      console.warn('Telegram svarte', svar.status, await svar.text());
-      return false;
+    const data = await svar.json().catch(() => null);
+    if (!svar.ok || data?.ok === false) {
+      console.warn('Telegram svarte', svar.status, JSON.stringify(data));
+      return null;
     }
-    return true;
+    return data?.result ?? true;
   } catch (feil) {
-    console.warn('Fikk ikke sendt til Telegram:', feil?.message ?? feil);
-    return false;
+    console.warn('Fikk ikke kontakt med Telegram:', feil?.message ?? feil);
+    return null;
   }
 }
+
+/**
+ * Sender en melding.
+ *
+ * `knapper` er rader med [tekst, data]. De gjør varselet om fra en beskjed til
+ * noe man kan svare på uten å åpne noe som helst.
+ */
+export async function sendTelegram(env, tekst, { stille = false, knapper = null, chat = null } = {}) {
+  const kropp = {
+    chat_id: chat ?? env.TELEGRAM_CHAT_ID,
+    text: tekst,
+    disable_notification: stille,
+    link_preview_options: { is_disabled: true },
+  };
+  if (knapper?.length) {
+    kropp.reply_markup = {
+      inline_keyboard: knapper.map((rad) => rad.map(([t, d]) => ({ text: t, callback_data: d }))),
+    };
+  }
+  return Boolean(await kall(env, 'sendMessage', kropp));
+}
+
+/** Tar bort «laster»-sirkelen på knappen han nettopp trykket. */
+export const kvitterTrykk = (env, id, tekst) =>
+  kall(env, 'answerCallbackQuery', { callback_query_id: id, text: tekst });
+
+/**
+ * Bytter ut knappene med det han valgte, så meldingen viser hva som ble
+ * svart – og så ingen trykker to ganger.
+ */
+export const byttUtKnapper = (env, chat, melding, tekst) =>
+  kall(env, 'editMessageReplyMarkup', {
+    chat_id: chat,
+    message_id: melding,
+    reply_markup: { inline_keyboard: [[{ text: tekst, callback_data: 'gjort' }]] },
+  });
+
+/** Sier fra til Telegram hvor svarene skal sendes. Kjøres av oppsettskriptet. */
+export const settWebhook = (env, url, hemmelig) =>
+  kall(env, 'setWebhook', {
+    url,
+    secret_token: hemmelig,
+    allowed_updates: ['message', 'callback_query'],
+  });

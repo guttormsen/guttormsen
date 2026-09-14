@@ -131,29 +131,52 @@ try {
   si('med /revoke først.\n');
   const token = await spør('Telegram-token:');
 
+  // Disse skal ingen taste inn, og ingen trenger å kunne.
+  const tilfeldig = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
+  const webhookHemmelig = tilfeldig();
+
   settHemmelighet('KODE_LYKKE', kodeLykke);
   settHemmelighet('KODE_MATHIAS', kodeMathias);
   settHemmelighet('TELEGRAM_TOKEN', token);
-  // Sesjonsnøkkelen skal ingen taste inn, og ingen trenger å kunne.
-  settHemmelighet(
-    'SESJON_HEMMELIG',
-    Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'),
-  );
+  settHemmelighet('SESJON_HEMMELIG', tilfeldig());
+  settHemmelighet('TELEGRAM_WEBHOOK_HEMMELIG', webhookHemmelig);
 
   /* 5. Ut i verden */
-  overskrift('5 av 5 · Legger ut');
+  overskrift('5 av 6 · Legger ut');
   si('Blir du spurt om et workers.dev-underdomene: velg et navn og svar ja.\n');
   if (!wrangler(['deploy'])) throw new Error('Utleggingen feilet. Se meldingen over.');
 
+  /* 6. Svarveien tilbake */
+  overskrift('6 av 6 · Svar fra Telegram');
+  si('Adressen står i utskriften rett over – den som slutter på .workers.dev.');
+  si('Lim den inn her, så sier jeg fra til Telegram hvor svarene skal.\n');
+  const adresse = (await spør('Adressen til appen:')).replace(/\/+$/, '');
+
+  const svar = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: `${adresse}/api/telegram`,
+      secret_token: webhookHemmelig,
+      allowed_updates: ['message', 'callback_query'],
+    }),
+  }).then((r) => r.json()).catch((e) => ({ ok: false, description: e.message }));
+
+  if (svar?.ok) si('  ✓ Telegram sender svarene til appen nå.');
+  else si(`  ✖ Fikk ikke satt det opp: ${svar?.description ?? 'ukjent feil'}. Kjør «npm run webhook» senere.`);
+
   overskrift('Ferdig');
-  si('Adressen står rett over, og ser slik ut:');
-  si('\n    https://lykkeglasset.<ditt-navn>.workers.dev\n');
-  si('Åpne den på telefonen og legg den til på hjemskjermen – da ser den ut');
+  si(`Appen ligger på ${adresse}`);
+  si('\nÅpne den på telefonen og legg den til på hjemskjermen – da ser den ut');
   si('som en app, og den åpner seg uten nettleserlinje.');
-  si('\nTo ting igjen:');
-  si('  • Legg boten inn i Telegram-gruppa, og send en melding der etterpå.');
-  si('    Uten det kommer ingen varsler fram.');
-  si('  • Prøv en dag med 2 av 5 og se at det plinger.');
+  si('\nTre ting igjen:');
+  si('  1. Legg boten inn i Telegram-gruppa, og send en melding der etterpå.');
+  si('     Uten det kommer ingen varsler fram.');
+  si('  2. Send «/eier ' + kodeMathias + '» til boten én gang. Da vet den at det');
+  si('     er deg, og bare deg, som kan svare derfra.');
+  si('  3. Prøv en dag med 2 av 5, og se at varselet kommer med knapper.');
+  si('\nDu trenger aldri taste koden din igjen: send «/logginn» til boten, så');
+  si('får du en lenke rett inn i appen.');
   si('\nNoe som ikke virker? «npm run logg» viser hva som skjer i sanntid.');
 } catch (feil) {
   console.error(`\n\x1b[31m✖ ${feil.message}\x1b[0m`);

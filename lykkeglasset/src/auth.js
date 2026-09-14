@@ -37,9 +37,14 @@ export function likeStrenger(a = '', b = '') {
   return ulik === 0;
 }
 
-/** Lager et token på formen `hvem.utløper.signatur`. */
-export async function lagToken(hvem, hemmelig, nå = Date.now()) {
-  const utløper = nå + LEVETID_DAGER * 86400000;
+/**
+ * Lager et token på formen `hvem.utløper.signatur`.
+ *
+ * `levetidMs` er der for engangslenkene fra Telegram: de skal vare minutter,
+ * ikke måneder.
+ */
+export async function lagToken(hvem, hemmelig, nå = Date.now(), levetidMs = LEVETID_DAGER * 86400000) {
+  const utløper = nå + levetidMs;
   const kropp = `${hvem}.${utløper}`;
   return `${kropp}.${await signer(kropp, hemmelig)}`;
 }

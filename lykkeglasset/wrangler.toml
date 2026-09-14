@@ -31,6 +31,10 @@ PAMINNELSE = "ja"
 DELT_MODUS = "nei"
 # Si fra på Telegram når hun er inne i appen. Høyst én gang i timen.
 AKTIV_VARSEL = "ja"
+# Morgenen etter en tung kveld kommer beskjeden på nytt, når den kan brukes.
+MORGEN_KL = "08:00"
+# Uka samlet, søndag kveld.
+UKEBREV_KL = "20:00"
 
 # Halvtimesticket brukes bare til å se om klokka har passert påminnelsestiden
 # i norsk tid. Cron kjører i UTC og kan ikke selv vite om det er sommertid.

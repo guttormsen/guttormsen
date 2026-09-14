@@ -837,9 +837,41 @@ function faneGlasset(t) {
       ]),
       arkivrute,
     ]),
+    el('div', { class: 'kort' }, [
+      el('p', { class: 'stempel', text: 'Årsboka' }),
+      el('p', { class: 'svak liten', style: 'margin:.5rem 0 .8rem', text: 'Hele året på én side, å lese fra topp til bunn.' }),
+      el('div', { class: 'rad' }, [Number(t.dato.slice(0, 4)), Number(t.dato.slice(0, 4)) - 1].map((ar) =>
+        el('button', { type: 'button', text: String(ar), onclick: () => visArsbok(t, ar) }))),
+    ]),
   );
   tellOpp(tall, antall);
   hentArkiv();
+}
+
+/** Hele året på én side. Den eneste skjermen som er laget for å leses. */
+async function visArsbok(t, ar) {
+  fanerad.replaceChildren();
+  tegn(el('p', { class: 'laster', text: 'Blar opp …' }));
+  try {
+    const bok = await api(`/aarsbok?ar=${ar}`);
+    tegn(el('div', { class: 'arsbok' }, [
+      el('button', { class: 'blank', type: 'button', onclick: start, text: '← Tilbake' }),
+      el('h1', { style: 'margin-top:1rem', text: `${bok.ar} i ${bok.antall} gode ting` }),
+      el('p', { class: 'fasit', text: `Skrevet over ${bok.dager} dager.` }),
+      ...bok.maneder.map((m) => el('section', {}, [
+        el('h2', { text: somDato(`${m.maned}-01`).toLocaleDateString('nb-NO', { month: 'long', timeZone: 'UTC' }) }),
+        el('ul', {}, m.ting.map((g) => el('li', {}, [
+          el('time', { datetime: g.dato, text: g.dato.slice(8) + '.' }),
+          el('span', {}, [g.om_oss && el('span', { class: 'merke', text: '💞' }), g.tekst]),
+        ]))),
+      ])),
+      !bok.antall && el('p', { class: 'svak', text: 'Ingenting skrevet dette året ennå.' }),
+      el('button', { class: 'blank', type: 'button', style: 'margin-top:1.5rem', onclick: start, text: '← Tilbake' }),
+    ]));
+  } catch (e) {
+    si(e.message);
+    start();
+  }
 }
 
 /* ---------- fane: oss ---------- */

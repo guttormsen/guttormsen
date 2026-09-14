@@ -340,6 +340,9 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 
 /* ---------- fanerad ---------- */
 
+/* Lesevisningene tømmer fanerada. En tom stripe med kantlinje er ikke noe. */
+#faner:empty { display: none; }
+
 #faner {
   position: sticky;
   bottom: 0;
@@ -571,6 +574,31 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 .arkiv-rad time { flex: none; font-size: .72rem; color: var(--svak); width: 4.2rem; font-variant-numeric: tabular-nums; }
 .arkiv-rad p { margin: 0; font-size: .95rem; }
 .arkiv-rad[data-oss="ja"] { border-color: color-mix(in srgb, var(--rose) 35%, transparent); }
+
+/* ---------- årsboka ---------- */
+
+.arsbok h1 { font-size: 2.3rem; }
+.arsbok .fasit { font-size: 1.05rem; color: var(--svak); margin-bottom: 2rem; }
+.arsbok section { margin-bottom: 1.8rem; }
+.arsbok h2 {
+  text-transform: capitalize;
+  font-size: 1.05rem;
+  color: var(--honning);
+  border-bottom: 1px solid var(--kant);
+  padding-bottom: .4rem;
+  margin-bottom: .7rem;
+}
+.arsbok ul { list-style: none; margin: 0; padding: 0; }
+.arsbok li {
+  display: flex;
+  gap: .8rem;
+  align-items: baseline;
+  padding: .3rem 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+.arsbok li time { flex: none; width: 2.6rem; font: .72rem var(--sans); color: var(--svak); font-variant-numeric: tabular-nums; }
 
 /* ---------- meldinger ---------- */
 

@@ -316,6 +316,32 @@ export async function api(full, { metode = 'GET', kropp } = {}) {
   if (sti === '/glasset') return glasset();
   if (sti === '/arkiv') return arkiv(sporring);
 
+  if (sti === '/aarsbok') {
+    const ar = (new URLSearchParams(sporring).get('ar') ?? idag().slice(0, 4)).slice(0, 4);
+    const alle = radene(await db.collection('dager').get())
+      .filter((r) => r.dato.startsWith(ar))
+      .sort((a, b) => a.dato.localeCompare(b.dato));
+    const synlige = erLykke ? alle : alle.filter((r) => !r.privat);
+    const maneder = new Map();
+    let antall = 0;
+    for (const rad of synlige) {
+      const dag = erLykke ? await lesDag(rad) : rad;
+      const md = rad.dato.slice(0, 7);
+      if (!maneder.has(md)) maneder.set(md, []);
+      for (const g of dag?.gode_ting ?? []) {
+        if (!g?.tekst) continue;
+        antall += 1;
+        maneder.get(md).push({ dato: rad.dato, tekst: g.tekst, om_oss: Boolean(g.om_oss) });
+      }
+    }
+    return {
+      ar,
+      antall,
+      dager: synlige.length,
+      maneder: [...maneder].filter(([, ting]) => ting.length).map(([maned, ting]) => ({ maned, ting })),
+    };
+  }
+
   if (sti === '/dag' && metode === 'GET') {
     const dato = new URLSearchParams(sporring).get('dato') ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) throw new Error('Ugyldig dato.');

@@ -12,12 +12,13 @@ import {
   COOKIE, lagToken, lesToken, lesCookie, likeStrenger, settCookie, slettCookie,
 } from './auth.js';
 import {
-  dagsnokkel, klokke, minutter, dagerMellom, sisteDager, sammeDagIFjor, norskDato,
+  dagsnokkel, klokke, minutter, dagerMellom, sisteDager, sammeDagIFjor, norskDato, norskUkedag,
 } from './dato.js';
 import {
-  BEHOV, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske, erAktiv,
+  BEHOV, SVAR, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske,
+  erAktiv, morgenPuff, ukesbrev, arsbok,
 } from './varsler.js';
-import { sendTelegram } from './telegram.js';
+import { sendTelegram, kvitterTrykk, byttUtKnapper } from './telegram.js';
 
 const LYKKE = 'lykke';
 const MATHIAS = 'mathias';
@@ -102,22 +103,37 @@ function forHam(dag, delt = false) {
  * Sender én gang. Raden i `varsler` er låsen: kommer den inn, er vi først.
  * Uten den ville hver lille retting av dagen utløst varselet på nytt.
  */
-async function sendEnGang(env, ctx, slag, dato, tekst, stille) {
+async function sendEnGang(env, ctx, slag, dato, tekst, stille, knapper = null) {
   const res = await env.DB
     .prepare('INSERT OR IGNORE INTO varsler (slag, dato, sendt_kl) VALUES (?1, ?2, ?3)')
     .bind(slag, dato, nå())
     .run();
   if (!res.meta?.changes) return false;
-  send(env, ctx, tekst, stille);
+  send(env, ctx, tekst, stille, knapper);
   return true;
 }
 
 /** Sender uten lås – for ting som skal fram hver gang, som meldinger. */
-function send(env, ctx, tekst, stille = false) {
-  const oppgave = sendTelegram(env, tekst, { stille });
+function send(env, ctx, tekst, stille = false, knapper = null) {
+  const oppgave = sendTelegram(env, tekst, { stille, knapper });
   if (ctx?.waitUntil) ctx.waitUntil(oppgave);
   return oppgave;
 }
+
+/* ---------- små ting som må huskes ---------- */
+
+const lesOppsett = async (env, nokkel) =>
+  (await env.DB.prepare('SELECT verdi FROM oppsett WHERE nokkel = ?1').bind(nokkel).first())?.verdi ?? null;
+
+const skrivOppsett = (env, nokkel, verdi) =>
+  env.DB.prepare(`INSERT INTO oppsett (nokkel, verdi, satt_kl) VALUES (?1, ?2, ?3)
+                  ON CONFLICT(nokkel) DO UPDATE SET verdi = ?2, satt_kl = ?3`)
+    .bind(nokkel, String(verdi), nå()).run();
+
+/** Legger en melding i samtalen. Brukes både fra appen og fra Telegram. */
+const leggMelding = (env, fra, tekst) =>
+  env.DB.prepare('INSERT INTO meldinger (fra, tekst, laget_kl) VALUES (?1, ?2, ?3)')
+    .bind(fra, tekst, nå()).run();
 
 /* ---------- innlogging ---------- */
 
@@ -286,7 +302,7 @@ async function lagreDag(kropp, env, ctx) {
   });
   const sendteNå = [];
   for (const v of skalSendes) {
-    if (await sendEnGang(env, ctx, v.slag, dato, v.tekst, v.stille)) sendteNå.push(v.slag);
+    if (await sendEnGang(env, ctx, v.slag, dato, v.tekst, v.stille, v.knapper)) sendteNå.push(v.slag);
   }
 
   return json({ dag, sendt: sendteNå, var_ny: !fraFør });
@@ -340,6 +356,137 @@ async function arkiv(env, hvem, url) {
   return json({ treff: ut.slice(0, 400), antall: ut.length });
 }
 
+/* ---------- Telegram inn ---------- */
+
+const KOMMANDOER = [
+  '/logginn – engangslenke rett inn i appen',
+  '/si <tekst> – send en melding til Lykke',
+  '/hjelp – denne lista',
+].join('\n');
+
+const svarTil = (env, ctx, chat, tekst) => {
+  const oppgave = sendTelegram(env, tekst, { stille: true, chat });
+  if (ctx?.waitUntil) ctx.waitUntil(oppgave);
+};
+
+/**
+ * Svar fra Telegram.
+ *
+ * To lag holder fremmede ute: Telegram sender en hemmelighet bare den og vi
+ * kjenner, og bare kontoen som én gang har sagt Mathias' kode, blir hørt på.
+ * Alt annet svares det høflig ja til og gjøres ingenting med – en webhook som
+ * klager, forteller bare den som prøver at den fant noe.
+ */
+async function fraTelegram(req, env, ctx, origin) {
+  if (!env.TELEGRAM_WEBHOOK_HEMMELIG
+    || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TELEGRAM_WEBHOOK_HEMMELIG) {
+    return feil('Nei.', 401);
+  }
+
+  const oppd = await req.json().catch(() => ({}));
+  const melding = oppd.message;
+  const trykk = oppd.callback_query;
+  const avsender = melding?.from?.id ?? trykk?.from?.id;
+  const chat = melding?.chat?.id ?? trykk?.message?.chat?.id;
+  if (!avsender) return json({ ok: true });
+
+  const tekst = (melding?.text ?? '').trim();
+  const eier = await lesOppsett(env, 'eier');
+
+  // Den første som sier koden, blir eier. Etter det er det bare han.
+  if (!eier) {
+    if (tekst.startsWith('/eier ') && likeStrenger(tekst.slice(6).trim(), env.KODE_MATHIAS)) {
+      await skrivOppsett(env, 'eier', avsender);
+      svarTil(env, ctx, chat, `Takk. Herfra er det bare deg jeg hører på.\n\n${KOMMANDOER}`);
+    } else if (tekst.startsWith('/')) {
+      svarTil(env, ctx, chat, 'Send «/eier <koden din>» én gang, så vet jeg hvem du er.');
+    }
+    return json({ ok: true });
+  }
+  if (String(avsender) !== String(eier)) return json({ ok: true });
+
+  /* --- trykk på en knapp --- */
+  if (trykk) {
+    const valg = SVAR[String(trykk.data ?? '').replace('svar:', '')];
+    if (valg) {
+      await leggMelding(env, MATHIAS, valg.melding);
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(kvitterTrykk(env, trykk.id, 'Sendt til Lykke'));
+        ctx.waitUntil(byttUtKnapper(env, chat, trykk.message?.message_id, `✓ ${valg.knapp}`));
+      }
+    } else if (ctx?.waitUntil) {
+      ctx.waitUntil(kvitterTrykk(env, trykk.id, ''));
+    }
+    return json({ ok: true });
+  }
+
+  /* --- kommandoer --- */
+  if (tekst === '/hjelp' || tekst === '/start') {
+    svarTil(env, ctx, chat, KOMMANDOER);
+    return json({ ok: true });
+  }
+
+  if (tekst === '/logginn') {
+    // Egen nøkkel for lenker: en sesjonskapsel skal ikke kunne brukes som
+    // lenke, og en lenke skal ikke kunne brukes som kapsel.
+    const token = await lagToken(MATHIAS, `${env.SESJON_HEMMELIG}:lenke`, Date.now(), 900000);
+    await skrivOppsett(env, 'lenke', token);
+    svarTil(env, ctx, chat, `Her, gyldig i et kvarter og bare én gang:\n${origin}/api/lenke?t=${token}`);
+    return json({ ok: true });
+  }
+
+  if (tekst.startsWith('/si ')) {
+    const sagt = tekst.slice(4).trim().slice(0, 2000);
+    if (sagt) {
+      await leggMelding(env, MATHIAS, sagt);
+      svarTil(env, ctx, chat, '✓ Sendt til Lykke.');
+    }
+    return json({ ok: true });
+  }
+
+  /* --- vanlig tekst ---
+     I en gruppe snakker dere også om alt mulig annet, så der må det være et
+     svar på noe boten har sagt. I en samtale med boten alene er alt ment hit. */
+  const svarPåBoten = Boolean(melding.reply_to_message?.from?.is_bot);
+  const aleneMedBoten = melding.chat?.type === 'private';
+  if (tekst && !tekst.startsWith('/') && (svarPåBoten || aleneMedBoten)) {
+    await leggMelding(env, MATHIAS, tekst.slice(0, 2000));
+    svarTil(env, ctx, chat, '✓ Sendt til Lykke.');
+  }
+  return json({ ok: true });
+}
+
+/** Alt som er skrevet i ett år, samlet måned for måned. */
+async function arsboka(env, hvem, url) {
+  const ar = (url.searchParams.get('ar') ?? idag(env).slice(0, 4)).slice(0, 4);
+  const rader = await env.DB
+    .prepare('SELECT * FROM dager WHERE dato >= ?1 AND dato <= ?2 ORDER BY dato')
+    .bind(`${ar}-01-01`, `${ar}-12-31`).all();
+
+  const måneder = new Map();
+  let antall = 0;
+  let dager = 0;
+  for (const rad of (rader.results ?? [])) {
+    const dag = radTilDag(rad);
+    if (hvem !== LYKKE && !erDelt(env) && (dag.privat || !dag.del_gode)) continue;
+    dager += 1;
+    const md = dag.dato.slice(0, 7);
+    if (!måneder.has(md)) måneder.set(md, []);
+    for (const g of dag.gode_ting) {
+      if (!g?.tekst) continue;
+      antall += 1;
+      måneder.get(md).push({ dato: dag.dato, tekst: g.tekst, om_oss: Boolean(g.om_oss) });
+    }
+  }
+
+  return json({
+    ar,
+    antall,
+    dager,
+    maneder: [...måneder].filter(([, ting]) => ting.length).map(([maned, ting]) => ({ maned, ting })),
+  });
+}
+
 /* ---------- ruteren ---------- */
 
 async function api(req, env, url, ctx) {
@@ -351,6 +498,24 @@ async function api(req, env, url, ctx) {
   if (sti === '/logg-inn' && req.method === 'POST') return loggInn(req, env);
   if (sti === '/logg-ut') return json({ ok: true }, 200, { 'Set-Cookie': slettCookie() });
   if (sti === '/meg') return json({ hvem });
+
+  // Telegram og engangslenka har ingen informasjonskapsel å vise til.
+  if (sti === '/telegram' && req.method === 'POST') return fraTelegram(req, env, ctx, url.origin);
+
+  if (sti === '/lenke' && req.method === 'GET') {
+    const t = url.searchParams.get('t') ?? '';
+    const lagret = await lesOppsett(env, 'lenke');
+    const gjelder = await lesToken(t, `${env.SESJON_HEMMELIG}:lenke`);
+    if (!t || !lagret || t !== lagret || gjelder !== MATHIAS) {
+      return feil('Lenken er brukt opp eller utløpt. Send /logginn på nytt.', 401);
+    }
+    await skrivOppsett(env, 'lenke', '');
+    const token = await lagToken(MATHIAS, env.SESJON_HEMMELIG);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/', 'Set-Cookie': settCookie(token), 'Cache-Control': 'no-store' },
+    });
+  }
 
   if (!hvem) return feil('Ikke logget inn.', 401);
   const erLykke = hvem === LYKKE;
@@ -368,6 +533,7 @@ async function api(req, env, url, ctx) {
   }
   if (sti === '/glasset') return glasset(env);
   if (sti === '/arkiv') return arkiv(env, hvem, url);
+  if (sti === '/aarsbok') return arsboka(env, hvem, url);
 
   // Én enkelt dag, for kalenderen. Han får den gjennom det samme filteret.
   if (sti === '/dag' && req.method === 'GET') {
@@ -387,8 +553,7 @@ async function api(req, env, url, ctx) {
   if (sti === '/melding' && req.method === 'POST') {
     const tekst = tekstFra('tekst', 2000);
     if (!tekst) return feil('Tom melding.', 400);
-    await env.DB.prepare('INSERT INTO meldinger (fra, tekst, laget_kl) VALUES (?1, ?2, ?3)')
-      .bind(hvem, tekst, nå()).run();
+    await leggMelding(env, hvem, tekst);
     // Bare den ene veien har en telefon å pinge. Den andre ser det i appen.
     if (erLykke) send(env, ctx, nyMelding(tekst));
     return json({ ok: true });
@@ -474,22 +639,69 @@ export default {
    */
   async scheduled(event, env, ctx) {
     // Tidspunktet kommer fra selve tikket, ikke fra klokka her og nå. Da kan
-    // vinduet testes uten å måtte vente til halv ti om kvelden.
+    // vinduene testes uten å måtte vente til halv ti om kvelden.
     const tid = new Date(event?.scheduledTime ?? Date.now());
     const dato = dagsnokkel(tid, sone(env));
     const nåMin = minutter(klokke(tid, sone(env)));
-    const målMin = minutter(env.PAMINNELSE_KL || '21:30') ?? 21 * 60 + 30;
-    if (nåMin === null || nåMin < målMin || nåMin >= målMin + 30) return;
+    if (nåMin === null) return;
+    // Cron tikker hver halvtime. Et vindu er den halvtimen som følger.
+    const iVinduet = (kl) => {
+      const m = minutter(kl);
+      return m != null && nåMin >= m && nåMin < m + 30;
+    };
 
-    const dag = await hentDag(env, dato);
-    if (!dag && env.PAMINNELSE !== 'nei') {
-      await sendEnGang(env, ctx, 'paminnelse', dato, påminnelse(), true);
+    /* Kvelden: er dagen ikke ført, minnes det på. */
+    if (iVinduet(env.PAMINNELSE_KL || '21:30')) {
+      const dag = await hentDag(env, dato);
+      if (!dag && env.PAMINNELSE !== 'nei') {
+        await sendEnGang(env, ctx, 'paminnelse', dato, påminnelse(), true);
+      }
+      const sist = await env.DB.prepare('SELECT dato FROM dager ORDER BY dato DESC LIMIT 1').first();
+      if (sist) {
+        const stille = dagerMellom(sist.dato, dato);
+        if (stille >= 3) await sendEnGang(env, ctx, 'stille', dato, stilleDager(stille), true);
+      }
     }
 
-    const sist = await env.DB.prepare('SELECT dato FROM dager ORDER BY dato DESC LIMIT 1').first();
-    if (sist) {
-      const stille = dagerMellom(sist.dato, dato);
-      if (stille >= 3) await sendEnGang(env, ctx, 'stille', dato, stilleDager(stille), true);
+    /* Morgenen: var i går tung, kommer beskjeden nå – da kan han gjøre noe. */
+    if (iVinduet(env.MORGEN_KL || '08:00')) {
+      const igår = await hentDag(env, sisteDager(dato, 2).at(-1));
+      if (igår && !igår.privat && igår.humor <= 2) {
+        const puff = morgenPuff(igår);
+        await sendEnGang(env, ctx, 'morgen', dato, puff.tekst, false, puff.knapper);
+      }
+    }
+
+    /* Søndag kveld: uka sett under ett. */
+    if (norskUkedag(dato) === 'søndag' && iVinduet(env.UKEBREV_KL || '20:00')) {
+      const grense = sisteDager(dato, 14).at(-1);
+      const rader = await env.DB
+        .prepare('SELECT * FROM dager WHERE dato >= ?1 ORDER BY dato DESC').bind(grense).all();
+      const dager = (rader.results ?? []).map(radTilDag);
+      const uke = ukesbilde(dager, dato);
+      if (uke.ført) {
+        const gode = dager
+          .filter((d) => !d.privat && dagerMellom(d.dato, dato) < 7)
+          .reduce((n, d) => n + d.gode_ting.length, 0);
+        await sendEnGang(env, ctx, 'uke', dato, ukesbrev(uke, gode), true);
+      }
+    }
+
+    /* Siste kvelden i året. */
+    if (dato.slice(5) === '12-31' && iVinduet('20:00')) {
+      const ar = dato.slice(0, 4);
+      const rader = await env.DB
+        .prepare('SELECT gode_ting FROM dager WHERE dato >= ?1 AND dato <= ?2')
+        .bind(`${ar}-01-01`, `${ar}-12-31`).all();
+      const alle = rader.results ?? [];
+      const antall = alle.reduce((n, r) => {
+        try {
+          return n + JSON.parse(r.gode_ting || '[]').length;
+        } catch {
+          return n;
+        }
+      }, 0);
+      if (antall) await sendEnGang(env, ctx, 'aarsbok', dato, arsbok(ar, antall, alle.length), false);
     }
   },
 };

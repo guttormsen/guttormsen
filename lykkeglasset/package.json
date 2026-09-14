@@ -13,7 +13,8 @@
     "logg": "wrangler tail",
     "dev": "wrangler dev",
     "ikoner": "node scripts/ikoner.mjs",
-    "db:skjema": "wrangler d1 execute lykkeglasset --remote --file=schema.sql --yes"
+    "db:skjema": "wrangler d1 execute lykkeglasset --remote --file=schema.sql --yes",
+    "webhook": "node scripts/webhook.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.42.0"

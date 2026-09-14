@@ -38,7 +38,29 @@ seg for å bruke. Derfor:
 | Melding fra henne | Varsel med lyd |
 | Nytt på ønskelista | Stille melding |
 | Hun åpner appen | Stille melding, høyst én gang i timen |
+| Morgenen etter en tung kveld | Med lyd, kl. 08 – samme beskjed, når den kan brukes |
+| Søndag kveld | Uka samlet: snitt, gode og tunge dager, hva hun har bedt om |
+| Nyttårsaften | Året i tall, og en påminnelse om å lese årsboka sammen |
 | Merket «bare for meg» | Ingenting, uansett |
+
+### Svar rett fra Telegram
+
+Et varsel om en tung dag er ellers bare en beskjed: du får vite at det er
+tungt, og så skjer det ingenting. Derfor ligger det knapper under dem:
+
+> `Ringer deg nå` · `Kommer hjem` · `Tenker på deg 🫂`
+
+Ett trykk, og hun ser det i appen innen sekunder. Du kan også svare med
+vanlig tekst – i en samtale med boten alene gjelder alt du skriver, og i en
+gruppe må det være et svar på noe boten har sagt, eller `/si <tekst>`. Ellers
+ville hver melding om melk og tannlegetimer havnet i dagboka hennes.
+
+To lag holder fremmede ute: Telegram sender en hemmelighet bare den og
+appen kjenner, og **bare kontoen som én gang har sagt `/eier <koden din>`**
+blir hørt på. Alle andre får høflig ingenting.
+
+`/logginn` gir deg en engangslenke rett inn i appen, gyldig i et kvarter.
+Du trenger aldri taste koden din igjen.
 
 **3. Hun får noe tilbake.** En app som bare rapporterer oppover blir en
 plikt. Derfor ligger det en hilsen fra ham klar om morgenen, brev han har
