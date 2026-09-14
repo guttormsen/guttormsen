@@ -67,3 +67,16 @@ test('tull i stedet for en lagret kode slipper ingen inn', async () => {
     assert.equal(await stemmerKode('hva som helst', rart), false);
   }
 });
+
+test('rundetallet holder seg innenfor det Cloudflare tillater', async () => {
+  const { lagKode } = await import('../src/auth.js');
+  const runder = Number((await lagKode('noe')).split('$')[1]);
+  // Workers nekter over 100 000, og feiler først i produksjon om vi bommer.
+  assert.ok(runder <= 100000, `${runder} runder er for mange`);
+  assert.ok(runder >= 50000, 'og ikke så få at det ikke er verdt noe');
+});
+
+test('en lagring med for mange runder svarer nei i stedet for å krasje', async () => {
+  const { stemmerKode } = await import('../src/auth.js');
+  assert.equal(await stemmerKode('hva som helst', 'pbkdf2$500000$abcd$efgh'), false);
+});

@@ -39,12 +39,18 @@ export function likeStrenger(a = '', b = '') {
 
 /* ---------- koder ---------- */
 
-const RUNDER = 200000;
+/**
+ * Cloudflare Workers nekter PBKDF2 over 100 000 runder. Node har ingen slik
+ * grense, så et høyere tall går rett gjennom testene og faller først på
+ * serveren – derfor står taket her, og derfor tester vi det.
+ */
+const MAKS_RUNDER = 100000;
+const RUNDER = MAKS_RUNDER;
 
 async function utled(kode, salt, runder) {
   const grunn = await crypto.subtle.importKey('raw', ENC.encode(kode), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: runder, hash: 'SHA-256' }, grunn, 256,
+    { name: 'PBKDF2', salt, iterations: Math.min(runder, MAKS_RUNDER), hash: 'SHA-256' }, grunn, 256,
   );
   return base64url(bits);
 }
@@ -65,6 +71,8 @@ export async function lagKode(kode) {
 export async function stemmerKode(kode, lagret) {
   const [merke, runder, salt, fasit] = String(lagret ?? '').split('$');
   if (merke !== 'pbkdf2' || !runder || !salt || !fasit) return false;
+  // En lagring vi ikke kan regne oss fram til, skal svare nei – ikke krasje.
+  if (Number(runder) > MAKS_RUNDER) return false;
   const bytes = Uint8Array.from(
     atob(salt.replaceAll('-', '+').replaceAll('_', '/')), (c) => c.charCodeAt(0),
   );

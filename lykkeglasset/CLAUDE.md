@@ -25,5 +25,14 @@ Skal noe endres her, skjer det som en egen oppgave som handler om denne appen.
 - Appen kjører på Cloudflare Workers (API + statiske filer) med D1 som lager.
 - **Ingen hemmeligheter i koden.** Telegram-token, koder og sesjonsnøkkel
   settes med `wrangler secret put` og ligger aldri i git. Repoet er offentlig.
+- **Boten skal alltid følge etter.** Får appen en ny funksjon, skal den også
+  kunne nås fra Telegram – som knapp i menyen, som kommando, eller begge.
+  En funksjon som bare finnes i appen, er halvferdig. Nye varsler hører
+  hjemme i `HENDELSER` i `varsler.js`, nye skjermer i `menyskjerm()` i
+  `worker.js`, og de skal dele tekst med kommandoene, ikke ha sin egen.
+- **Cloudflare Workers tåler maks 100 000 PBKDF2-runder.** Node har ingen
+  slik grense, så et høyere tall går rett gjennom testene og faller først i
+  produksjon. Se `MAKS_RUNDER` i `auth.js`. Den slags forskjeller hører
+  hjemme i en test, ikke i hukommelsen.
 - Innholdet er privat og personlig. Ikke legg inn analyse, sporing, tredjeparts
   skrifttyper eller CDN-er. Alt skal hentes fra egen opprinnelse.
