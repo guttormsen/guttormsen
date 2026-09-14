@@ -1,7 +1,7 @@
 /**
  * Oppstart og lim. Her kobles kart, tilstand, API-er og panel sammen.
  */
-import { DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
+import { BASEMAPS, DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
 import { $, debounce, formatDistance, render } from './util.js';
 import { closestPointOnPath, densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
@@ -22,6 +22,7 @@ import { createSearch } from './search.js';
 import { createSnapper, SNAP_REASONS } from './snap.js';
 import { createSheet } from './sheet.js';
 import { createCloseStack } from './closestack.js';
+import { MAX_TILES, downloadTiles, estimateBytes, tileUrl, tilesForRoute, zoomsForRoute } from './offline.js';
 import { buildGpx, parseGpx, safeFilename } from './gpx.js';
 import { copyText, downloadText, toast } from './ui.js';
 import { DEFAULT_FILTERS, buildTrips, enrichTrip, filterTrips, sampleForCard, surpriseMe } from './trips.js';
@@ -494,6 +495,9 @@ async function recompute(reason) {
 
   // Vis foreløpige tall uten høyder med én gang, så appen kjennes rask ut.
   S.state.summary = summarise(sample, new Array(sample.length).fill(null), S.state.trip.options);
+  // Ny rute betyr nytt kartområde å eventuelt ta med offline.
+  if (geometryChanged) resetOffline();
+  refreshOfflineEstimate();
   renderAll();
 
   if (geometryChanged) S.state.elevationCache = null;
@@ -832,6 +836,75 @@ function updateSearchHere() {
   button.textContent = discovery.searched ? '🔍 Søk i dette området' : '🔍 Finn turer her';
 }
 
+/* ---------- Kartet med på tur ---------- */
+
+/**
+ * Nedlastingen av kartfliser langs ruta. Holdes her og ikke i state.js fordi
+ * ingenting av det skal lagres mellom økter – flisene ligger i mellomlageret.
+ */
+const offline = { status: 'klar', done: 0, total: 0, tiles: 0, savedMb: 0, error: null };
+let offlineRun = null;
+
+/** Antall kartruter ruta trenger, brukt både til anslag og til grensa. */
+function offlineTiles(summary) {
+  if (!summary?.line?.length) return [];
+  return tilesForRoute(summary.line, { zooms: zoomsForRoute(summary.distance) });
+}
+
+function refreshOfflineEstimate() {
+  offline.tiles = offlineTiles(S.state.summary).length;
+}
+
+/** En ny rute har ikke lastet ned noe ennå. */
+function resetOffline() {
+  offlineRun?.abort();
+  offlineRun = null;
+  Object.assign(offline, { status: 'klar', done: 0, total: 0, savedMb: 0, error: null });
+}
+
+async function downloadOfflineMap() {
+  const summary = S.state.summary;
+  if (!summary) return;
+  const tiles = offlineTiles(summary);
+  if (!tiles.length || tiles.length > MAX_TILES) {
+    offline.tiles = tiles.length;
+    renderPane('turen');
+    return;
+  }
+
+  const template = BASEMAPS.find((map) => map.id === basemap)?.url ?? BASEMAPS[0].url;
+  const urls = tiles.map((tile) => tileUrl(template, tile));
+
+  offlineRun?.abort();
+  offlineRun = new AbortController();
+  Object.assign(offline, { status: 'laster', done: 0, total: urls.length, error: null });
+  renderPane('turen');
+
+  try {
+    const result = await downloadTiles(urls, {
+      signal: offlineRun.signal,
+      onProgress: (done, total) => {
+        offline.done = done;
+        offline.total = total;
+        // Hver eneste flis er for ofte å tegne på nytt.
+        if (done % 10 === 0 || done === total) renderPane('turen');
+      },
+    });
+    if (offlineRun.signal.aborted) {
+      Object.assign(offline, { status: 'klar' });
+      toast('Nedlastingen ble avbrutt.');
+    } else {
+      const bytes = result.bytes || estimateBytes(result.saved);
+      Object.assign(offline, { status: 'ferdig', savedMb: Math.max(1, Math.round(bytes / 1024 / 1024)) });
+      toast('Kartet ligger klart offline.');
+    }
+  } catch (error) {
+    Object.assign(offline, { status: 'feil', error: String(error.message ?? error) });
+  } finally {
+    renderPane('turen');
+  }
+}
+
 /* ---------- Handlinger ---------- */
 
 const handlers = {
@@ -926,6 +999,8 @@ const handlers = {
   onRetryPois: () => {
     if (S.state.summary) loadPois(S.state.summary);
   },
+  onDownloadOffline: () => downloadOfflineMap(),
+  onCancelOffline: () => offlineRun?.abort(),
   onToggleCheck: (index, value) => {
     checklist[index] = value;
     persistPrefs();
@@ -1026,6 +1101,7 @@ const PANES = {
         avalanche: S.state.avalanche,
         pois: S.state.pois,
         poiError: S.state.poiError,
+        offline,
         photos: S.state.photos,
         article: S.state.article,
         loading: S.state.loading,

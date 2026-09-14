@@ -12,11 +12,17 @@
  */
 const VERSION = 'v4';
 const SHELL = `lykkeligtur-shell-${VERSION}`;
-const TILES = `lykkeligtur-tiles-${VERSION}`;
 const DATA = `lykkeligtur-data-${VERSION}`;
 
-/** Maks antall kartfliser vi tar vare på (ca. 40–60 MB). */
-const TILE_LIMIT = 1200;
+/*
+ * Kartflisene er med vilje ikke versjonert. Har man lastet ned kartet for en
+ * tur, skal det ikke forsvinne fordi appen fikk en oppdatering kvelden før.
+ * Fliser fra Kartverket endrer seg uansett sjelden.
+ */
+const TILES = 'lykkeligtur-tiles';
+
+/** Maks antall kartfliser vi tar vare på (ca. 100 MB). */
+const TILE_LIMIT = 4000;
 
 const SHELL_FILES = [
   './',
@@ -42,6 +48,7 @@ const SHELL_FILES = [
   'src/js/navigate.js',
   'src/js/sheet.js',
   'src/js/closestack.js',
+  'src/js/offline.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',
@@ -93,6 +100,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
+        // Gamle versjonerte flislagre ryddes bort; det uversjonerte blir stående.
         Promise.all(keys.filter((key) => ![SHELL, TILES, DATA].includes(key)).map((key) => caches.delete(key))),
       )
       .then(() => self.clients.claim())

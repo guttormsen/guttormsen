@@ -405,6 +405,15 @@ try {
 
   /* Avanserte valg er skjult til man ber om dem */
   const advanced = page.locator('.block--fold:has(> summary:text("Avansert"))');
+  /* Kartet med på tur. Vi laster ikke faktisk ned fliser i testen – Kartverket
+     er et fellesgode – men tilbudet skal stå der med et anslag. */
+  const offlineText = await page.locator('.block:has-text("Ta kartet med offline") .hint').first().textContent();
+  check(
+    'kartet kan tas med offline',
+    /MB/.test(offlineText ?? '') && (await page.locator('button:has-text("Last ned kartet")').count()) === 1,
+    (offlineText ?? '').trim().slice(-40),
+  );
+
   check('avanserte valg ligger sammenslått', await page.locator('#opt-snap').isHidden());
   await advanced.locator('summary').click();
   await page.waitForTimeout(200);

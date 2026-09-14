@@ -27,6 +27,7 @@ ved første besøk etter navnebyttet.
 | **Hva finnes langs ruta** | Badeplass, bålplass, rasteplass, utsikt, hytte, toalett, lekeplass og buss til start – hentet fra OpenStreetMap og vist som merker på turkortet. Filtrer på dem for å finne turen som passer dagen. |
 | **Tilgjengelighet** | Fasiliteter merket som rullestolvennlige i OpenStreetMap vises med ♿, og kan filtreres på. Merket sier noe om toalettet, parkeringen eller rasteplassen – ikke om selve stien. |
 | **Om stedet** | Et kort utdrag fra norsk Wikipedia når artikkelen faktisk handler om turen – ikke bare tilfeldigvis ligger i nærheten. |
+| **Offline** | Last ned kartet langs ruta før du drar. Det ligger klart når dekningen tar slutt, og overlever at appen oppdateres. |
 | **Turdagbok** | Marker en tur som gått, så samler den seg opp med kilometer og høydemeter. Fjorten merker å samle, og sammenligninger som gjør tallene til noe man kjenner igjen: «du har klatret 1,4 × Galdhøpiggen». |
 | **Ekte kart** | Kartverkets topografiske kart, gråtonekart, turkart og sjøkart – det samme grunnlaget som norgeskart.no. |
 | **Merkede ruter** | Turrutebasen legges oppå kartet: fotruter, skiløyper, sykkelruter og andre ruter. |
@@ -131,6 +132,23 @@ når en tur vises, får den plass i den delen av kartet du faktisk ser.
 
 Turen er én sammenhengende flate å rulle i. Nøkkeltallene og høydeprofilen lå
 før i et eget fast felt, så panelet var delt i to som rullet hver for seg.
+
+### Ta kartet med offline
+
+I fjellet er det ofte ikke dekning, og et kart som må lastes ned mens du står
+der er ikke et kart. Under turen ligger **«Last ned kartet for denne turen»**.
+Den henter kartrutene langs ruta – 700 meter ut til hver side, på fire
+zoomnivåer valgt etter hvor lang turen er – og legger dem i det samme
+mellomlageret som service workeren bruker.
+
+- Anslått størrelse vises før du trykker, og framdriften mens den går.
+- Ruter som allerede ligger der hentes ikke på nytt.
+- Fire om gangen. Kartverket er et fellesgode.
+- Dekker ruta et så stort område at det ville blitt over 900 kartruter, sier
+  appen fra i stedet for å be om alt.
+
+Flislageret er med vilje **ikke** versjonert. Har du lastet ned kartet for en
+tur, skal det ikke forsvinne fordi appen fikk en oppdatering kvelden før.
 
 ### Filtrene viser alt de har
 
@@ -289,6 +307,7 @@ src/js/
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
   sheet.js              bunnarket på mobil: drag, kast og tre stillinger
   closestack.js         tilbakeknappen: hvilket lag som lukkes først
+  offline.js            kartrutene langs ruta, lastet ned på forhånd
   trailhit.js           finner hvilken sti som ligger under fingeren
   navigate.js           hvor du er på ruta, hva som gjenstår, og hvilken vei
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
@@ -304,8 +323,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   171 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 76 sjekker mot ekte tjenester
+test/                   185 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 77 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

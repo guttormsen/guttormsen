@@ -9,6 +9,7 @@ import { describeSymbol, describeWind } from './api/met.js';
 import { closestPointOnPath, compassPoint } from './geo.js';
 import { arrivalTime, formatPosition, headingAhead, nextAhead } from './navigate.js';
 import { describeMode, directionsUrl } from './api/entur.js';
+import { MAX_TILES } from './offline.js';
 import { daylightCheck } from './weather.js';
 import { GRADES, LENGTH_BUCKETS, SPECIAL_TYPES, hasActiveFilters } from './trips.js';
 import { FEATURES, FEATURE_LIST, topFeatures } from './features.js';
@@ -627,7 +628,7 @@ function localInputValue(date) {
 export function renderTrip(context, handlers) {
   const {
     trip, summary, startTime, weather, sun, avalanche, pois, poiError, photos, article,
-    loading, checklist, navigation, journeys,
+    loading, checklist, navigation, journeys, offline,
   } = context;
   handlersRef = handlers;
 
@@ -658,6 +659,7 @@ export function renderTrip(context, handlers) {
     articleSection(article),
     weatherSection(weather, sun, loading.weather, startTime),
     safetySection(summary, sun, avalanche, startTime, checklist, handlers),
+    offlineSection(summary, offline, handlers),
     quickSettings(trip, startTime, handlers),
     waypointSection(trip, summary, handlers),
     advancedSection(trip, handlers),
@@ -781,6 +783,57 @@ function gettingThereSection(summary, journeys, loading, handlers) {
 
   // Uten bil er dette ofte det som avgjør om turen blir noe av. Derfor åpen.
   return section('Kom deg til start', body, { collapsible: true, open: true });
+}
+
+/**
+ * Kartet med på tur.
+ *
+ * På fjellet er det ofte ikke dekning, og et kart som må lastes ned mens du
+ * står der er ikke et kart. Her hentes flisene langs ruta ned på forhånd.
+ */
+function offlineSection(summary, offline, handlers) {
+  const { status, done, total, tiles, savedMb, error } = offline;
+
+  if (status === 'laster') {
+    const andel = total ? Math.round((done / total) * 100) : 0;
+    return section('Ta kartet med offline', [
+      el('div', { class: 'progress' }, [
+        el('div', { class: 'progress__bar', style: `--andel:${andel}%` }),
+      ]),
+      el('p', { class: 'hint', text: `${done} av ${total} kartruter · ${andel} %` }),
+      el('button', { class: 'btn', type: 'button', text: 'Avbryt', onclick: handlers.onCancelOffline }),
+    ]);
+  }
+
+  if (status === 'ferdig') {
+    return section('Ta kartet med offline', [
+      el('p', { class: 'ok-line', text: `✓ Kartet langs ruta ligger nå på telefonen${savedMb ? ` (${savedMb} MB)` : ''}. Det virker uten dekning.` }),
+      el('button', { class: 'btn', type: 'button', text: '↻ Hent på nytt', onclick: handlers.onDownloadOffline }),
+    ]);
+  }
+
+  if (status === 'feil') {
+    return section('Ta kartet med offline', [
+      el('p', { class: 'hint', text: error ?? 'Nedlastingen stoppet.' }),
+      el('button', { class: 'btn', type: 'button', text: '↻ Prøv igjen', onclick: handlers.onDownloadOffline }),
+    ]);
+  }
+
+  if (tiles > MAX_TILES) {
+    return section('Ta kartet med offline', [
+      el('p', { class: 'hint', text: `Denne ruta dekker et så stort område at kartet ville blitt ${tiles} ruter. Del turen opp, så går det.` }),
+    ]);
+  }
+
+  return section('Ta kartet med offline', [
+    el('p', { class: 'hint', text: `I fjellet er det ofte ikke dekning. Hent kartet langs ruta nå, så ligger det klart – omtrent ${Math.max(1, Math.round((tiles * 25) / 1024))} MB.` }),
+    el('button', {
+      class: 'btn btn--primary',
+      type: 'button',
+      text: '⬇ Last ned kartet for denne turen',
+      onclick: handlers.onDownloadOffline,
+    }),
+  ]);
 }
 
 function quickSettings(trip, startTime, handlers) {
