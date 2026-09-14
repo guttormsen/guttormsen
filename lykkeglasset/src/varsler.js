@@ -33,8 +33,13 @@ export const HUMOR = {
   5: 'skikkelig god',
 };
 
-/** Rydder en innsendt dag til noe som trygt kan lagres. */
-export function ryddDag(rå = {}) {
+/**
+ * Rydder en innsendt dag til noe som trygt kan lagres.
+ *
+ * I delt modus finnes ikke valgene om hva som holdes tilbake – da deles alt,
+ * og appen sier det rett ut i stedet for å tilby knapper som ikke gjelder.
+ */
+export function ryddDag(rå = {}, delt = false) {
   // Uten et tall å gå ut fra er «midt på treet» det ærligste – ikke 1, som
   // ville utløst varsel om en tung dag hun aldri har sagt at hun hadde.
   const tall = Number(rå.humor);
@@ -48,14 +53,17 @@ export function ryddDag(rå = {}) {
     .slice(0, 3);
   const behov = Object.hasOwn(BEHOV, rå.behov) ? rå.behov : null;
   const tungt = String(rå.tungt ?? '').trim().slice(0, 2000) || null;
+  // Valget er ett, ikke tre: dagen deles, eller så er den hennes. Tre brytere
+  // for samme spørsmål gjorde det bare vanskeligere å vite hva som gikk ut.
+  const privat = !delt && rå.privat === true;
   return {
     humor,
     gode_ting: godeTing,
     tungt,
     behov,
-    del_gode: rå.del_gode === false ? 0 : 1,
-    del_tungt: rå.del_tungt === true ? 1 : 0,
-    privat: rå.privat === true ? 1 : 0,
+    del_gode: privat ? 0 : 1,
+    del_tungt: privat ? 0 : 1,
+    privat: privat ? 1 : 0,
   };
 }
 
@@ -88,6 +96,12 @@ export function varslerForDag({ dag, igår = null, sendt = [] }) {
 
   if (dag.humor === 5) legg('god', false);
 
+  // En delt dag skal alltid fram: de som ikke utløste noe av det over, går som
+  // en stille oppsummering – ellers ville bare ytterpunktene nådd ham, og
+  // hverdagen vært taus. Men bare når ingenting er sagt om dagen fra før;
+  // ellers ville hver lille rettelse gitt en ny melding.
+  if (!ut.length && !sendt.length) legg('dagen', true);
+
   return ut;
 }
 
@@ -96,6 +110,7 @@ const OVERSKRIFT = {
   tung: () => '🫂 Lykke har hatt en tung dag',
   monster: () => '🫂 Andre tunge dagen på rad',
   god: () => '✨ Lykke har hatt en skikkelig god dag',
+  dagen: (dag) => `🫙 Lykke førte dagen – ${HUMOR[dag.humor]}`,
 };
 
 /** Selve teksten i Telegram. Ren tekst – ingen formatering å rote med. */
@@ -113,7 +128,7 @@ export function melding(slag, dag) {
   }
 
   const gode = dag.del_gode ? (dag.gode_ting ?? []) : [];
-  if (gode.length && (slag === 'god' || slag === 'tung')) {
+  if (gode.length && slag !== 'monster' && slag !== 'rop') {
     linjer.push('', 'Tre gode ting i dag:');
     for (const g of gode) linjer.push(`  • ${g.tekst}`);
   }
@@ -146,4 +161,25 @@ export function stilleDager(antall) {
 /** Når hun åpner et brev, får han vite det. */
 export function brevÅpnet(laget) {
   return `💌 Lykke åpnet brevet du la inn ${laget}.`;
+}
+
+/**
+ * Melding fra henne. Den går alltid gjennom – en melding er noe hun
+ * uttrykkelig har sendt til ham, ikke noe appen har tolket seg fram til.
+ */
+export function nyMelding(tekst) {
+  return `💬 Melding fra Lykke:\n\n«${tekst}»`;
+}
+
+/**
+ * Hun har åpnet appen. Sendes stille, og høyst én gang i timen – ellers blir
+ * det et pip hver gang hun bytter fane.
+ */
+export function erAktiv(klokkeslett) {
+  return `👋 Lykke er inne i appen nå (${klokkeslett}).`;
+}
+
+/** Noe nytt på ønskelista. Går stille; det haster aldri. */
+export function nyttOnske(tekst) {
+  return `✨ Lykke la til på ønskelista: «${tekst}»`;
 }

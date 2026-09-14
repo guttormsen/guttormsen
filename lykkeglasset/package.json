@@ -9,12 +9,16 @@
     "oppsett": "node scripts/oppsett.mjs",
     "lokalt": "node scripts/lokalt.mjs",
     "test": "node --test test/*.test.mjs",
-    "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "logg": "wrangler tail",
+    "dev": "wrangler dev",
     "ikoner": "node scripts/ikoner.mjs",
-    "db:skjema": "wrangler d1 execute lykkeglasset --remote --file=schema.sql"
+    "db:skjema": "wrangler d1 execute lykkeglasset --remote --file=schema.sql --yes"
   },
   "devDependencies": {
     "wrangler": "^4.42.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

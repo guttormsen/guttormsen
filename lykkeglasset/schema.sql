@@ -16,12 +16,25 @@ CREATE TABLE IF NOT EXISTS dager (
   endret_kl   TEXT NOT NULL
 );
 
--- Hilsener den ene veien: skrives om kvelden, ligger klart neste morgen.
-CREATE TABLE IF NOT EXISTS hilsener (
+-- Meldinger begge veier. Den nyeste fra ham ligger klar som «dagens hilsen»,
+-- men hun kan svare – ellers blir appen en postkasse med bare én luke.
+CREATE TABLE IF NOT EXISTS meldinger (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  fra       TEXT NOT NULL,               -- 'lykke' eller 'mathias'
   tekst     TEXT NOT NULL,
   laget_kl  TEXT NOT NULL,
   lest_kl   TEXT
+);
+CREATE INDEX IF NOT EXISTS meldinger_tid ON meldinger (laget_kl);
+
+-- Ting dere skal gjøre. Begge kan legge til, begge kan huke av.
+CREATE TABLE IF NOT EXISTS onsker (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  tekst     TEXT NOT NULL,
+  laget_av  TEXT NOT NULL,
+  laget_kl  TEXT NOT NULL,
+  gjort_kl  TEXT,
+  gjort_av  TEXT
 );
 
 -- Brev som legges inn på forhånd og åpnes på en dårlig dag.

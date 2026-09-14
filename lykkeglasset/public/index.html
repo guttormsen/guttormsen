@@ -8,8 +8,8 @@
 <!-- Siden skal ikke kunne søkes opp. Den finnes for to personer. -->
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#17130f" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#fdf8f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17120e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fdf7ee" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lykkeglasset">
 <link rel="manifest" href="manifest.webmanifest">
@@ -18,9 +18,13 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <main id="app" aria-live="polite">
-    <p class="laster">Åpner glasset …</p>
-  </main>
+  <div class="himmel" aria-hidden="true"><i></i><i></i></div>
+  <div id="skall">
+    <main id="app" aria-live="polite">
+      <p class="laster">Åpner glasset …</p>
+    </main>
+    <nav id="faner" aria-label="Deler av appen"></nav>
+  </div>
   <div id="brodske" class="brodske" role="status" aria-live="polite"></div>
   <script type="module" src="app.js"></script>
 </body>

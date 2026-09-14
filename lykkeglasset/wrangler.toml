@@ -25,6 +25,12 @@ TIDSSONE = "Europe/Oslo"
 PAMINNELSE_KL = "21:30"
 # Slå av påminnelsen ved å sette denne til "nei".
 PAMINNELSE = "ja"
+# Normalt velger Lykke selv om dagen deles. Settes denne til "ja", finnes ikke
+# valget: alt deles, og appen sier det rett ut i stedet for å tilby en knapp
+# den ikke følger.
+DELT_MODUS = "nei"
+# Si fra på Telegram når hun er inne i appen. Høyst én gang i timen.
+AKTIV_VARSEL = "ja"
 
 # Halvtimesticket brukes bare til å se om klokka har passert påminnelsestiden
 # i norsk tid. Cron kjører i UTC og kan ikke selv vite om det er sommertid.

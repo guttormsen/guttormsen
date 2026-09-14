@@ -1,153 +1,266 @@
 /*
  * Lykkeglasset.
  *
- * Ett stilark, lys og mørk modus, mobil først. Fargene er varme med vilje –
- * dette er en app man åpner om kvelden, ikke et skjema på jobb.
+ * Retningen er kveldslys: appen åpnes om natta, i senga, med skjermen tett
+ * på ansiktet. Derfor er mørkt utgangspunktet og lyst det andre temaet – ikke
+ * omvendt. Fargene er hentet fra krukka: honning, rose og varmt trevirke mot
+ * en natt som ikke er svart, men brun.
  *
- * All bevegelse deler den samme kurva og de samme to varighetene, og alt av
- * den slås av under `prefers-reduced-motion`. Ingenting som beveger seg får
- * stå i veien for noe man venter på.
+ * All bevegelse deler den samme kurva og de samme varighetene, og alt av den
+ * slås av under `prefers-reduced-motion`.
  */
 
-:root {
-  --bg: #fbf6ef;
-  --bg-2: #f4e9db;
-  --flate: #fffdfa;
-  --flate-2: #f4ebe0;
-  --tekst: #2a211b;
-  --svak: #7d6a5c;
-  --kant: #eaddcc;
-  --kant-sterk: #ddcab3;
-  --aksent: #b3543a;
-  --aksent-myk: #f0dbcf;
-  --aksent-tekst: #fffdfa;
-  --glass-kant: #c9b59a;
-  --glass-inni: #fdf6ea;
-  --lokk: #d9a441;
+/* ---------- tokens: natt ---------- */
 
-  --skygge: 0 1px 1px rgba(60, 42, 30, .04), 0 6px 16px -8px rgba(60, 42, 30, .16);
-  --skygge-hev: 0 2px 4px rgba(60, 42, 30, .06), 0 14px 28px -12px rgba(60, 42, 30, .22);
+:root {
+  --natt: #17120e;
+  --natt-2: #221a14;
+  --flate: #251c16;
+  --flate-2: #30251c;
+  --flate-3: #3b2e23;
+  --tekst: #f7ece0;
+  --svak: #ad9781;
+  --kant: #3a2c22;
+  --kant-sterk: #4c3b2d;
+
+  --honning: #f0a92f;
+  --rose: #e0806a;
+  --aksent: var(--rose);
+  --aksent-tekst: #1c140f;
+  --glass-kant: #7a6249;
+  --glass-inni: rgba(247, 236, 224, .05);
+  --lokk: #c9902f;
+
+  --h1: #5f76a3;
+  --h2: #8386a5;
+  --h3: #a8967f;
+  --h4: #d59a3c;
+  --h5: #f2b63c;
+
+  --skygge: 0 1px 2px rgba(0, 0, 0, .4);
+  --skygge-hev: 0 10px 30px -12px rgba(0, 0, 0, .8);
+  --glo: 0 0 44px -8px rgba(240, 169, 47, .38);
 
   --runding: 20px;
-  --kurve: cubic-bezier(.22, .8, .24, 1);
-  --rask: .18s;
-  --rolig: .44s;
+  --kurve: cubic-bezier(.22, .9, .26, 1);
+  --sprett: cubic-bezier(.34, 1.56, .64, 1);
+  --rask: .16s;
+  --rolig: .42s;
 
   --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15110d;
-    --bg-2: #1d1712;
-    --flate: #221b15;
-    --flate-2: #2b231b;
-    --tekst: #f3e9dd;
-    --svak: #a6927f;
-    --kant: #372d23;
-    --kant-sterk: #4a3d30;
-    --aksent: #e3906d;
-    --aksent-myk: #3a2a22;
-    --aksent-tekst: #1a1410;
-    --glass-kant: #6f5c47;
-    --glass-inni: #241d16;
-    --lokk: #c79437;
+/* ---------- tokens: morgenlys ---------- */
 
-    --skygge: 0 1px 2px rgba(0, 0, 0, .3);
-    --skygge-hev: 0 8px 24px -10px rgba(0, 0, 0, .6);
+/*
+ * Verdiene står to ganger med vilje: CSS har ingen måte å gjenbruke en
+ * tokenliste på, og et byggesteg bare for dette er ikke verdt det.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --natt: #fdf7ee;
+    --natt-2: #f7ecdd;
+    --flate: #fffdf9;
+    --flate-2: #f6ece0;
+    --flate-3: #efe0cf;
+    --tekst: #241c16;
+    --svak: #7c6857;
+    --kant: #ece0d0;
+    --kant-sterk: #d9c7b0;
+
+    --honning: #c9821a;
+    --rose: #b8573c;
+    --aksent-tekst: #fffdf9;
+    --glass-kant: #c4ab8c;
+    --glass-inni: rgba(36, 28, 22, .04);
+    --lokk: #d9a441;
+
+    --skygge: 0 1px 2px rgba(80, 55, 35, .06), 0 8px 20px -10px rgba(80, 55, 35, .18);
+    --skygge-hev: 0 4px 8px rgba(80, 55, 35, .08), 0 18px 36px -14px rgba(80, 55, 35, .3);
+    --glo: 0 0 40px -10px rgba(201, 130, 26, .3);
+
+    color-scheme: light;
   }
+}
+
+:root[data-theme="light"] {
+  --natt: #fdf7ee;
+  --natt-2: #f7ecdd;
+  --flate: #fffdf9;
+  --flate-2: #f6ece0;
+  --flate-3: #efe0cf;
+  --tekst: #241c16;
+  --svak: #7c6857;
+  --kant: #ece0d0;
+  --kant-sterk: #d9c7b0;
+
+  --honning: #c9821a;
+  --rose: #b8573c;
+  --aksent-tekst: #fffdf9;
+  --glass-kant: #c4ab8c;
+  --glass-inni: rgba(36, 28, 22, .04);
+  --lokk: #d9a441;
+
+  --skygge: 0 1px 2px rgba(80, 55, 35, .06), 0 8px 20px -10px rgba(80, 55, 35, .18);
+  --skygge-hev: 0 4px 8px rgba(80, 55, 35, .08), 0 18px 36px -14px rgba(80, 55, 35, .3);
+  --glo: 0 0 40px -10px rgba(201, 130, 26, .3);
+
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
 
-/* Litt lys øverst, litt mer mettet nederst. Overgangen ligger på <html> og er
-   festet til vinduet: da vandrer den ikke når siden rulles, og den slipper
-   heller ikke opp der innholdet er kortere enn skjermen. */
-html {
-  min-height: 100%;
-  background: var(--bg) linear-gradient(175deg, var(--bg) 0%, var(--bg-2) 100%) no-repeat fixed;
-}
+html { background: var(--natt); }
 
 body {
   margin: 0;
   min-height: 100dvh;
   color: var(--tekst);
   font: 16px/1.55 var(--sans);
+  background: var(--natt);
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
+/* ---------- nordlyset ---------- */
+
+/*
+ * To store, uskarpe flekker som driver sakte i bakgrunnen. De ligger i et
+ * eget lag bak alt, flytter seg bare med `transform`, og forsvinner helt når
+ * noen har bedt om mindre bevegelse.
+ */
+.himmel {
+  position: fixed;
+  inset: -30% -30% 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.himmel i {
+  position: absolute;
+  display: block;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: .3;
+}
+.himmel i:nth-child(1) {
+  top: -20%; left: -15%;
+  background: radial-gradient(circle, var(--honning), transparent 68%);
+  animation: driv1 34s var(--kurve) infinite alternate;
+}
+.himmel i:nth-child(2) {
+  top: 18%; right: -25%;
+  background: radial-gradient(circle, var(--rose), transparent 66%);
+  animation: driv2 46s var(--kurve) infinite alternate;
+  opacity: .22;
+}
+
+@keyframes driv1 {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(12vw, 10vh, 0) scale(1.18); }
+}
+@keyframes driv2 {
+  from { transform: translate3d(0, 0, 0) scale(1.1); }
+  to { transform: translate3d(-14vw, 16vh, 0) scale(.9); }
+}
+
+/* ---------- skallet ---------- */
+
+#skall {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 #app {
+  flex: 1;
+  width: 100%;
   max-width: 34rem;
   margin: 0 auto;
-  padding: max(1.25rem, env(safe-area-inset-top)) 1rem
-           calc(3rem + env(safe-area-inset-bottom));
+  padding: max(1.1rem, env(safe-area-inset-top)) 1rem 1.5rem;
 }
+
+.laster { padding: 6rem 1rem; text-align: center; color: var(--svak); }
 
 /* ---------- typografi ---------- */
 
 h1, h2, h3 {
   font-family: var(--serif);
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.12;
   margin: 0 0 .35rem;
-  letter-spacing: -.01em;
+  letter-spacing: -.015em;
+  text-wrap: balance;
 }
-h1 { font-size: 1.75rem; }
-h2 { font-size: 1.2rem; }
+h1 { font-size: 1.85rem; }
+h2 { font-size: 1.25rem; }
 h3 { font-size: 1rem; }
 p { margin: 0 0 .7rem; }
 .svak { color: var(--svak); }
 .liten { font-size: .86rem; line-height: 1.45; }
 .midt { text-align: center; }
+.tall { font-variant-numeric: tabular-nums; }
 
 .stempel {
-  font-size: .72rem;
-  letter-spacing: .1em;
+  font: 600 .7rem/1 var(--sans);
+  letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--svak);
-  font-family: var(--sans);
 }
 
-.laster { padding: 5rem 1rem; text-align: center; color: var(--svak); }
+.stor-tall {
+  font-family: var(--serif);
+  font-size: 2.6rem;
+  font-weight: 600;
+  letter-spacing: -.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- toppen ---------- */
+
+.topp {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: 1.3rem;
+}
+.topp h1 { margin: 0; }
 
 /* ---------- kort ---------- */
 
 .kort {
+  position: relative;
   background: var(--flate);
   border: 1px solid var(--kant);
   border-radius: var(--runding);
   padding: 1.15rem;
-  margin: 0 0 .9rem;
+  margin: 0 0 .85rem;
   box-shadow: var(--skygge);
 }
 .kort > :last-child { margin-bottom: 0; }
 
-/* Kortene legger seg inn etter hverandre, ikke alle på én gang. `--i` settes
-   i JS; uten den starter alle med én gang, og det er også greit. */
+/* Ett kort får lov til å skille seg ut. Ikke to. */
+.kort.løftet {
+  border-color: color-mix(in srgb, var(--honning) 45%, var(--kant));
+  box-shadow: var(--skygge), var(--glo);
+}
+
 .kort, .topp, .portal {
   animation: stig var(--rolig) var(--kurve) backwards;
-  /* Taket gjør at det åttende kortet ikke venter et halvt sekund lenger enn
-     det første. Trappa skal antydes, ikke telles. */
   animation-delay: calc(min(var(--i, 0), 5) * 45ms);
 }
-
-/* Inne i kveldsrunden gjør steget bevegelsen. To lag oppå hverandre blir uro. */
-.steg .kort { animation: none; }
+.steg .kort, .fane-inn .kort { animation: none; }
 
 @keyframes stig {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: none; }
-}
-
-.topp {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: .75rem;
-  margin-bottom: 1.4rem;
 }
 
 /* ---------- knapper ---------- */
@@ -165,27 +278,28 @@ button {
   transition: transform var(--rask) var(--kurve),
               background-color var(--rask) var(--kurve),
               border-color var(--rask) var(--kurve),
-              box-shadow var(--rask) var(--kurve);
+              box-shadow var(--rask) var(--kurve),
+              color var(--rask) var(--kurve);
 }
-button:active { transform: scale(.975); }
+button:active { transform: scale(.97); }
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--aksent);
+  outline: 2px solid var(--honning);
   outline-offset: 3px;
 }
 
 .hoved {
-  background: var(--aksent);
+  background: linear-gradient(180deg, var(--honning), color-mix(in srgb, var(--honning) 78%, var(--rose)));
   border-color: transparent;
   color: var(--aksent-tekst);
-  font-weight: 600;
+  font-weight: 650;
   width: 100%;
   min-height: 54px;
   box-shadow: var(--skygge);
 }
-.hoved:hover { box-shadow: var(--skygge-hev); }
-.hoved[disabled] { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.hoved:hover { box-shadow: var(--skygge-hev), var(--glo); }
+.hoved[disabled] { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .hoved[disabled]:active { transform: none; }
 
 .blank {
@@ -193,15 +307,19 @@ textarea:focus-visible {
   border-color: transparent;
   color: var(--svak);
   box-shadow: none;
+  padding-inline: .3rem;
 }
-.blank:hover { color: var(--tekst); background: var(--flate-2); }
+.blank:hover { color: var(--tekst); }
+
+.liten-knapp { min-height: 38px; padding: .35rem .75rem; font-size: .85rem; border-radius: 999px; }
 
 .rad { display: flex; gap: .5rem; flex-wrap: wrap; }
 .rad > * { flex: 1 1 8rem; }
 
-/* ---------- skjemafelt ---------- */
+/* ---------- felt ---------- */
 
 input[type="text"],
+input[type="search"],
 input[type="password"],
 textarea {
   font: inherit;
@@ -215,9 +333,57 @@ textarea {
   min-height: 48px;
   transition: border-color var(--rask) var(--kurve), background-color var(--rask) var(--kurve);
 }
-input:focus, textarea:focus { border-color: var(--kant-sterk); background: var(--flate); }
-textarea { min-height: 7.5rem; resize: vertical; line-height: 1.5; }
+input:focus, textarea:focus { border-color: var(--kant-sterk); background: var(--flate-3); }
+input::placeholder, textarea::placeholder { color: var(--svak); opacity: .75; }
+textarea { min-height: 6.5rem; resize: vertical; line-height: 1.5; }
 label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35rem; }
+
+/* ---------- fanerad ---------- */
+
+#faner {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  gap: .15rem;
+  padding: .4rem .5rem calc(.4rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--natt) 86%, transparent);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--kant);
+}
+#faner button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .18rem;
+  min-height: 56px;
+  padding: .35rem .2rem;
+  border: none;
+  background: none;
+  color: var(--svak);
+  font-size: .68rem;
+  letter-spacing: .02em;
+  border-radius: 14px;
+}
+#faner button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#faner button[aria-current="page"] { color: var(--honning); }
+#faner button[aria-current="page"] svg { transform: translateY(-1px); }
+#faner .duppedott {
+  position: absolute;
+  margin: -16px 0 0 18px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rose);
+}
+
+.fane-inn { animation: faneInn .3s var(--kurve); }
+@keyframes faneInn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
 
 /* ---------- humørvalget ---------- */
 
@@ -226,125 +392,278 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .3rem;
-  padding: .85rem .2rem;
-  font-size: 1.6rem;
+  gap: .35rem;
+  padding: .9rem .2rem;
+  font-size: 1.7rem;
   line-height: 1;
-  min-height: 84px;
+  min-height: 90px;
+  background: var(--flate-2);
 }
 .humor button span {
-  font-size: .62rem;
+  font-size: .6rem;
   color: var(--svak);
   line-height: 1.15;
   text-align: center;
 }
 .humor button[aria-pressed="true"] {
   border-color: var(--h);
-  background: color-mix(in srgb, var(--h) 16%, var(--flate));
-  transform: translateY(-3px);
-  box-shadow: var(--skygge-hev);
+  background: color-mix(in srgb, var(--h) 22%, var(--flate));
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 10px 24px -10px var(--h);
 }
 .humor button[aria-pressed="true"] span { color: var(--tekst); }
-.humor button[data-verdi="1"] { --h: #5b6b85; }
-.humor button[data-verdi="2"] { --h: #7f8398; }
-.humor button[data-verdi="3"] { --h: #a89b8c; }
-.humor button[data-verdi="4"] { --h: #cf9a4e; }
-.humor button[data-verdi="5"] { --h: #e0a83c; }
+.humor button[data-verdi="1"] { --h: var(--h1); }
+.humor button[data-verdi="2"] { --h: var(--h2); }
+.humor button[data-verdi="3"] { --h: var(--h3); }
+.humor button[data-verdi="4"] { --h: var(--h4); }
+.humor button[data-verdi="5"] { --h: var(--h5); }
+
+/* Skjermen tar farge av valget et lite øyeblikk. */
+.gjenskinn {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, var(--f), transparent 60%);
+  animation: gjenskinn .75s var(--kurve) forwards;
+}
+@keyframes gjenskinn {
+  from { opacity: 0; transform: scale(.7); }
+  35% { opacity: .55; }
+  to { opacity: 0; transform: scale(1.5); }
+}
 
 /* ---------- brikker ---------- */
 
 .brikker { display: flex; flex-wrap: wrap; gap: .45rem; }
 .brikker button {
   flex: 0 1 auto;
-  padding: .55rem .9rem;
+  padding: .5rem .9rem;
   border-radius: 999px;
   font-size: .9rem;
   min-height: 42px;
 }
 .brikker button[aria-pressed="true"] {
-  background: var(--aksent);
+  background: var(--rose);
   border-color: transparent;
   color: var(--aksent-tekst);
+  font-weight: 600;
 }
 
-/* ---------- dagene som prikker ---------- */
+/* ---------- kalenderen ---------- */
 
-.dager { display: flex; flex-wrap: wrap; gap: 5px; }
-.dag {
-  width: 14px;
-  height: 14px;
-  border-radius: 5px;
+.maned-topp { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .9rem; }
+.maned-topp h2 { margin: 0; text-transform: capitalize; }
+.maned-topp button { min-height: 40px; width: 40px; padding: 0; border-radius: 12px; }
+
+.uke-navn, .maned {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+.uke-navn { margin-bottom: .35rem; }
+.uke-navn span { text-align: center; font-size: .62rem; color: var(--svak); text-transform: uppercase; letter-spacing: .06em; }
+
+.maned button, .maned span {
+  aspect-ratio: 1;
+  border-radius: 11px;
+  border: 1px solid transparent;
   background: var(--flate-2);
-  border: 1px solid var(--kant);
-  animation: popp .3s var(--kurve) backwards;
-  animation-delay: calc(var(--i, 0) * 14ms);
+  color: var(--svak);
+  font-size: .78rem;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
-.dag[data-humor="1"] { background: #5b6b85; border-color: transparent; }
-.dag[data-humor="2"] { background: #7f8398; border-color: transparent; }
-.dag[data-humor="3"] { background: #a89b8c; border-color: transparent; }
-.dag[data-humor="4"] { background: #cf9a4e; border-color: transparent; }
-.dag[data-humor="5"] { background: #e0a83c; border-color: transparent; }
-.dag[data-privat="ja"] {
-  background: repeating-linear-gradient(45deg, var(--kant-sterk) 0 3px, transparent 3px 6px);
+.maned span { background: none; opacity: .3; }
+.maned button[data-humor] { color: #17120e; font-weight: 600; border-color: transparent; }
+.maned button[data-humor="1"] { background: var(--h1); }
+.maned button[data-humor="2"] { background: var(--h2); }
+.maned button[data-humor="3"] { background: var(--h3); }
+.maned button[data-humor="4"] { background: var(--h4); }
+.maned button[data-humor="5"] { background: var(--h5); }
+.maned button[data-privat="ja"] {
+  background: repeating-linear-gradient(45deg, var(--kant-sterk) 0 4px, transparent 4px 8px);
+  color: var(--svak);
 }
-.dag[data-idag="ja"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--aksent); }
+.maned button[data-idag="ja"] { box-shadow: 0 0 0 2px var(--natt), 0 0 0 3.5px var(--honning); }
+.maned button:disabled { cursor: default; opacity: .55; }
+.maned button {
+  animation: popp .32s var(--sprett) backwards;
+  animation-delay: calc(var(--i, 0) * 9ms);
+}
 
 @keyframes popp {
-  from { opacity: 0; transform: scale(.4); }
+  from { opacity: 0; transform: scale(.55); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---------- stemningskurva ---------- */
+
+.kurve { width: 100%; height: 108px; display: block; overflow: visible; }
+.kurve .strek {
+  fill: none;
+  stroke: var(--honning);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: var(--lengde);
+  stroke-dashoffset: var(--lengde);
+  animation: tegn 1.4s var(--kurve) .15s forwards;
+}
+.kurve .flate { fill: url(#kurvefyll); opacity: 0; animation: tonInn .8s ease .8s forwards; }
+.kurve .rutenett { stroke: var(--kant); stroke-width: 1; }
+.kurve .siste { fill: var(--honning); opacity: 0; animation: tonInn .4s ease 1.3s forwards; }
+.kurve text { fill: var(--svak); font: .62rem var(--sans); }
+
+@keyframes tegn { to { stroke-dashoffset: 0; } }
+@keyframes tonInn { to { opacity: 1; } }
 
 /* ---------- glasset ---------- */
 
-.glass-rad { display: flex; align-items: center; gap: 1.1rem; }
-.glass { flex: none; width: 82px; height: auto; overflow: visible; }
+.glass-scene { display: flex; justify-content: center; padding: .4rem 0 1rem; }
+.glass { width: 128px; height: auto; overflow: visible; filter: drop-shadow(0 12px 28px rgba(0, 0, 0, .35)); }
 .glass .innhold circle {
-  animation: popp .45s var(--kurve) backwards;
-  animation-delay: calc(.25s + var(--i, 0) * 45ms);
+  animation: popp .5s var(--sprett) backwards;
+  animation-delay: calc(.2s + var(--i, 0) * 40ms);
 }
+.glass .skinn { animation: blink 6s ease-in-out infinite; }
+@keyframes blink { 0%, 100% { opacity: .5; } 50% { opacity: .85; } }
 
-/* Lappen kommer opp av glasset. */
+.glass-rad { display: flex; align-items: center; gap: 1.1rem; }
+.glass-rad .glass { width: 74px; }
+
 .lapp {
-  background: var(--glass-inni);
+  background: var(--flate-2);
   border: 1px solid var(--kant-sterk);
-  border-radius: 14px;
-  padding: .9rem 1rem;
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
   margin-top: .9rem;
   font-family: var(--serif);
-  font-size: 1.05rem;
-  animation: trekk .5s var(--kurve);
+  font-size: 1.1rem;
+  line-height: 1.5;
+  animation: trekk .55s var(--sprett);
 }
-.lapp .når { display: block; margin-top: .45rem; font: .8rem/1 var(--sans); color: var(--svak); }
+.lapp .når { display: block; margin-top: .5rem; font: .78rem var(--sans); color: var(--svak); }
 
 @keyframes trekk {
-  from { opacity: 0; transform: translateY(22px) rotate(-2.5deg) scale(.96); }
+  from { opacity: 0; transform: translateY(26px) rotate(-3deg) scale(.94); }
   to { opacity: 1; transform: none; }
 }
 
-/* ---------- brev ---------- */
+/* ---------- arkivet ---------- */
 
-.brev-apen {
-  animation: brevAapner .55s var(--kurve);
-  font-family: var(--serif);
-  font-size: 1.1rem;
-  line-height: 1.6;
+.arkiv { display: flex; flex-direction: column; gap: .5rem; margin-top: .9rem; }
+.arkiv-rad {
+  display: flex;
+  gap: .7rem;
+  align-items: baseline;
+  padding: .7rem .85rem;
+  border-radius: 13px;
+  background: var(--flate-2);
+  border: 1px solid transparent;
+  animation: stig .3s var(--kurve) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+}
+.arkiv-rad time { flex: none; font-size: .72rem; color: var(--svak); width: 4.2rem; font-variant-numeric: tabular-nums; }
+.arkiv-rad p { margin: 0; font-size: .95rem; }
+.arkiv-rad[data-oss="ja"] { border-color: color-mix(in srgb, var(--rose) 35%, transparent); }
+
+/* ---------- meldinger ---------- */
+
+.samtale { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .9rem; }
+.boble {
+  max-width: 85%;
+  padding: .7rem .95rem;
+  border-radius: 18px;
+  font-size: .96rem;
+  line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: boble .35s var(--sprett) backwards;
+  animation-delay: calc(min(var(--i, 0), 8) * 30ms);
 }
+.boble[data-min="ja"] {
+  align-self: flex-end;
+  background: linear-gradient(180deg, var(--rose), color-mix(in srgb, var(--rose) 80%, #000));
+  color: var(--aksent-tekst);
+  border-bottom-right-radius: 6px;
+}
+.boble[data-min="nei"] {
+  align-self: flex-start;
+  background: var(--flate-2);
+  border: 1px solid var(--kant);
+  border-bottom-left-radius: 6px;
+}
+.boble time { display: block; margin-top: .3rem; font-size: .68rem; opacity: .65; }
 
-@keyframes brevAapner {
-  from { opacity: 0; transform: scale(.94) rotate(-1.5deg); }
+@keyframes boble {
+  from { opacity: 0; transform: translateY(10px) scale(.94); }
   to { opacity: 1; transform: none; }
 }
+
+.skrivefelt { display: flex; gap: .5rem; align-items: flex-end; }
+.skrivefelt textarea { min-height: 48px; max-height: 8rem; }
+.skrivefelt button { flex: none; width: 48px; min-height: 48px; padding: 0; border-radius: 14px; }
+
+/* ---------- ønskelista ---------- */
+
+.onsker { display: flex; flex-direction: column; gap: .45rem; margin-bottom: .9rem; }
+.onske {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .6rem .8rem;
+  border-radius: 14px;
+  background: var(--flate-2);
+  border: 1px solid transparent;
+  transition: opacity var(--rask) var(--kurve), background-color var(--rask) var(--kurve);
+}
+.onske .kryss {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 9px;
+  border: 1.5px solid var(--kant-sterk);
+  background: none;
+  color: var(--honning);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .9rem;
+}
+.onske p { flex: 1; margin: 0; font-size: .95rem; position: relative; }
+.onske .hvem { font-size: .7rem; color: var(--svak); }
+.onske .fjern { opacity: .45; min-height: 34px; padding: 0 .55rem; }
+.onske:hover .fjern, .onske:focus-within .fjern { opacity: 1; }
+.onske[data-gjort="ja"] { opacity: .5; }
+.onske[data-gjort="ja"] .kryss { background: var(--honning); border-color: transparent; color: var(--aksent-tekst); }
+.onske[data-gjort="ja"] p::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1.5px;
+  width: 100%;
+  background: currentColor;
+  animation: strek .3s var(--kurve);
+}
+@keyframes strek { from { width: 0; } to { width: 100%; } }
 
 /* ---------- avkryssing ---------- */
 
 .hake { display: flex; align-items: flex-start; gap: .65rem; margin: .55rem 0; cursor: pointer; }
-.hake input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--aksent); flex: none; }
+.hake input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--honning); flex: none; }
 /* Ligger inni en <label>, som er grå. Selve teksten skal være lesbar. */
 .hake span { font-size: .92rem; color: var(--tekst); }
 .hake input:disabled + span { color: var(--svak); }
 
-/* ---------- forhåndsvisning av det som sendes ---------- */
+/* ---------- forhåndsvisning ---------- */
 
 .sendes {
   background: var(--flate-2);
@@ -363,7 +682,23 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 .liste li:first-child { border-top: none; }
 .merke { margin-right: .35rem; }
 
-/* ---------- framdrift i kveldsrunden ---------- */
+/* ---------- nøkkeltall ---------- */
+
+.tall-rad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.tall-rute {
+  background: var(--flate-2);
+  border-radius: 14px;
+  padding: .8rem .6rem;
+  text-align: center;
+}
+.tall-rute b { display: block; font-family: var(--serif); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tall-rute span { font-size: .68rem; color: var(--svak); line-height: 1.2; display: block; margin-top: .15rem; }
+
+.retning { font-size: .8rem; font-weight: 600; }
+.retning[data-vei="opp"] { color: var(--h5); }
+.retning[data-vei="ned"] { color: var(--h2); }
+
+/* ---------- kveldsrunden ---------- */
 
 .framdrift { display: flex; gap: 5px; margin-bottom: 1.1rem; }
 .framdrift i {
@@ -373,11 +708,11 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   background: var(--kant);
   transition: background-color var(--rolig) var(--kurve);
 }
-.framdrift i[data-pa="ja"] { background: var(--aksent); }
+.framdrift i[data-pa="ja"] { background: var(--honning); }
 
-.steg { animation: stegInn .3s var(--kurve); }
+.steg { animation: stegInn .32s var(--kurve); }
 @keyframes stegInn {
-  from { opacity: 0; transform: translateX(10px); }
+  from { opacity: 0; transform: translateX(14px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -385,47 +720,52 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 .stegrad .hoved { flex: 2 1 0; }
 .stegrad .blank { flex: 1 1 0; }
 
-/* ---------- tall ---------- */
+/* ---------- brev ---------- */
 
-.stor-tall {
+.brev-apen {
+  animation: brevAapner .6s var(--kurve);
   font-family: var(--serif);
-  font-size: 2.4rem;
-  font-weight: 600;
-  letter-spacing: -.03em;
-  line-height: 1;
-  margin-right: .4rem;
+  font-size: 1.15rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+@keyframes brevAapner {
+  from { opacity: 0; transform: scale(.92) rotate(-2deg); }
+  to { opacity: 1; transform: none; }
 }
 
 /* ---------- innlogging ---------- */
 
-.portal { padding-top: 2.5rem; text-align: center; }
-.portal .glass { width: 96px; animation: sveve 5s ease-in-out infinite alternate; }
-.portal h1 { margin: 1rem 0 2rem; }
+.portal { padding-top: 3rem; text-align: center; }
+.portal .glass { width: 116px; animation: sveve 6s ease-in-out infinite alternate; }
+.portal h1 { margin: 1.2rem 0 .3rem; font-size: 2.1rem; }
+.portal .liten { margin-bottom: 2rem; }
 
 @keyframes sveve {
-  from { transform: translateY(0); }
-  to { transform: translateY(-7px); }
+  from { transform: translateY(0) rotate(-1deg); }
+  to { transform: translateY(-10px) rotate(1deg); }
 }
 
-.feil { color: var(--aksent); font-size: .88rem; margin-top: .6rem; }
+.feil { color: var(--rose); font-size: .88rem; margin-top: .6rem; }
 
 /* ---------- brødskive ---------- */
 
 .brodske {
   position: fixed;
   left: 50%;
-  bottom: calc(1.25rem + env(safe-area-inset-bottom));
-  transform: translate(-50%, 1.25rem) scale(.96);
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  transform: translate(-50%, 1.25rem) scale(.95);
   background: var(--tekst);
-  color: var(--bg);
+  color: var(--natt);
   padding: .75rem 1.1rem;
   border-radius: 999px;
   font-size: .9rem;
+  font-weight: 500;
   max-width: calc(100vw - 2rem);
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--rask) var(--kurve), transform .3s var(--kurve);
-  z-index: 10;
+  transition: opacity var(--rask) var(--kurve), transform .32s var(--sprett);
+  z-index: 30;
 }
 .brodske[data-vis="ja"] { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
@@ -436,5 +776,10 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
+    /* Forsinkelsen må også bort. Uten dette blir alt som legger seg inn med
+       `backwards` stående usynlig så lenge forsinkelsen varer – og innhold
+       som venter på en animasjon er innhold som kan bli borte. */
+    animation-delay: 0ms !important;
   }
+  .himmel { display: none; }
 }

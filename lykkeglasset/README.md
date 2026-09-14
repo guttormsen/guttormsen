@@ -1,8 +1,12 @@
 # Lykkeglasset
 
 Et kveldsrituale for to. Hun fører dagen på under ett minutt – hvordan den
-var, tre gode ting, og hva hun trenger. Han får beskjed når det betyr noe, og
-legger igjen en hilsen tilbake.
+var, tre gode ting, og hva hun trenger. Han får beskjed på Telegram, og de
+skriver sammen i appen.
+
+Fire faner: **I dag** (kveldsrunden), **Kalender** (hver dag som farge, med
+stemningskurve og ukestall), **Glasset** (alt hun har skrevet, søkbart) og
+**Oss** (meldinger begge veier, og en ønskeliste dere fyller sammen).
 
 Ingen andre har tilgang. Ingen sporing, ingen analyse, ingen tredjeparter.
 
@@ -13,11 +17,12 @@ Ingen andre har tilgang. Ingen sporing, ingen analyse, ingen tredjeparter.
 
 ## De tre reglene appen er bygget rundt
 
-**1. Hun bestemmer hva han får se.** Fritekst deles bare når hun huker av.
-Hele dagen kan merkes privat, og da går ingenting ut – uansett hvor lav den
-er. Siste steg i kveldsrunden viser ordrett hva som sendes, før hun lagrer.
-I koden går alt som skal til Mathias gjennom `forHam()` i `src/worker.js`, så
-det er ett sted å lese for å vite at det stemmer.
+**1. Hun bestemmer hva han får se.** Ett valg per dag, ikke tre brytere:
+**del med Mathias**, eller **bare for meg**. En privat dag går ingenting ut
+fra – han ser en skravert rute i kalenderen, og at dagen finnes, men ikke hva
+som står i den. Siste steg i kveldsrunden viser ordrett hva som sendes, før
+hun lagrer. I koden går alt som skal til Mathias gjennom `forHam()` i
+`src/worker.js`, så det er ett sted å lese for å vite at det stemmer.
 
 **2. Varsel bare når det betyr noe.** Pling hver kveld, og han slutter å se
 etter. Pling bare når det er tungt, og appen blir et alarmanlegg hun vegrer
@@ -29,8 +34,11 @@ seg for å bruke. Derfor:
 | 1–2 av 5 | Varsel med lyd |
 | To tunge dager på rad | Én stille beskjed i tillegg |
 | 5 av 5 | Varsel – de gode dagene skal telle like mye |
-| 3–4 av 5 | Ingen varsel. Det står i appen når han åpner den |
-| Merket privat | Ingenting, uansett |
+| Alle andre delte dager | Stille melding med alt hun skrev – ingen lyd |
+| Melding fra henne | Varsel med lyd |
+| Nytt på ønskelista | Stille melding |
+| Hun åpner appen | Stille melding, høyst én gang i timen |
+| Merket «bare for meg» | Ingenting, uansett |
 
 **3. Hun får noe tilbake.** En app som bare rapporterer oppover blir en
 plikt. Derfor ligger det en hilsen fra ham klar om morgenen, brev han har
@@ -59,12 +67,14 @@ src/
 public/
   index.html          skallet
   app.js              hele grensesnittet, uten rammeverk
+  api.js              den eneste veien til serveren – kan byttes ut
   app.css             lys og mørk modus
   sw.js               offline – men aldri mellomlagring av /api/
 scripts/
   oppsett.mjs         hele oppsettet i ett kjør
   ikoner.mjs          tegner appikonene som PNG
-test/                 31 enhetstester av det som kan gå galt stille
+artefakt/             samme app mot et annet lager, for publisering uten server
+test/                 70 enhetstester av det som kan gå galt stille
 ```
 
 `varsler.js` og `dato.js` er rene funksjoner uten avhengigheter. Det er de
@@ -111,6 +121,8 @@ I `wrangler.toml`:
 |---|---|
 | `PAMINNELSE_KL` | Når appen minner om kveldsrunden hvis dagen står tom (norsk tid) |
 | `PAMINNELSE` | Sett til `"nei"` for å droppe påminnelsen helt |
+| `AKTIV_VARSEL` | Sett til `"nei"` for å slutte å si fra når hun er inne |
+| `DELT_MODUS` | `"ja"` fjerner «bare for meg»-valget: alt deles, og appen sier det rett ut |
 | `TELEGRAM_CHAT_ID` | Hvilken samtale varslene går til |
 | `TIDSSONE` | Hvilken tidssone døgnet regnes i |
 

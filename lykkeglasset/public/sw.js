@@ -5,8 +5,8 @@
  * et cachelager på telefonen lenger enn nødvendig, og en gammel tilstand er
  * verre enn ingen tilstand.
  */
-const LAGER = 'lykkeglasset-v1';
-const SKALL = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'ikoner/glass.svg'];
+const LAGER = 'lykkeglasset-v2';
+const SKALL = ['./', 'index.html', 'app.css', 'app.js', 'api.js', 'manifest.webmanifest', 'ikoner/glass.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(LAGER).then((c) => c.addAll(SKALL)).then(() => self.skipWaiting()));

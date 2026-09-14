@@ -52,6 +52,9 @@ beforeEach(() => {
     TELEGRAM_CHAT_ID: '-1',
     TIDSSONE: 'Europe/Oslo',
     PAMINNELSE_KL: '21:30',
+    // Testene under kjører i personvernmodus, der hun styrer hva som deles.
+    // Delt modus har sine egne tester nederst.
+    DELT_MODUS: 'nei',
   };
 });
 
@@ -123,9 +126,8 @@ test('Mathias kan ikke skrive kveldsrunden hennes', async () => {
   assert.equal(svar.status, 403);
 });
 
-test('Lykke kan ikke legge inn hilsener eller brev', async () => {
+test('Lykke kan ikke legge inn brev til seg selv', async () => {
   const cookie = await loggInn('lykke');
-  assert.equal((await kall('/hilsen', { metode: 'POST', cookie, kropp: { tekst: 'hei' } })).status, 403);
   assert.equal((await kall('/brev', { metode: 'POST', cookie, kropp: { tekst: 'hei' } })).status, 403);
 });
 
@@ -154,39 +156,26 @@ test('en privat dag sender ingenting og viser ingenting', async () => {
   assert.ok(!JSON.stringify(t).includes('noe jeg ikke vil dele'));
 });
 
-test('fritekst hun ikke har delt, når verken Telegram eller Mathias', async () => {
+test('deler hun dagen, kommer også det tunge fram', async () => {
   const hennes = await loggInn('lykke');
   await kall('/dag', {
-    metode: 'POST',
-    cookie: hennes,
-    kropp: { humor: 2, tungt: 'krangel på jobb', del_tungt: false },
+    metode: 'POST', cookie: hennes, kropp: { humor: 2, tungt: 'krangel på jobb' },
   });
-
-  assert.equal(sendte.length, 1);
-  assert.ok(!alleMeldinger().includes('krangel på jobb'));
+  assert.ok(alleMeldinger().includes('krangel på jobb'));
 
   const hans = await loggInn('mathias');
   const t = await (await kall('/tilstand', { cookie: hans })).json();
-  assert.equal(t.idag.tungt, null);
-  assert.equal(t.idag.holdt_tungt, true, 'han skal få vite at noe var tungt, ikke hva');
-});
-
-test('deler hun det tunge, kommer det fram', async () => {
-  const hennes = await loggInn('lykke');
-  await kall('/dag', {
-    metode: 'POST',
-    cookie: hennes,
-    kropp: { humor: 2, tungt: 'krangel på jobb', del_tungt: true },
-  });
-  assert.ok(alleMeldinger().includes('krangel på jobb'));
+  assert.equal(t.idag.tungt, 'krangel på jobb');
 });
 
 /* ---------- varsling ---------- */
 
-test('en helt vanlig dag gir ingen pling', async () => {
+test('en helt vanlig dag går fram uten lyd, med alt hun skrev', async () => {
   const hennes = await loggInn('lykke');
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 4, gode_ting: [{ tekst: 'sol' }] } });
-  assert.deepEqual(sendte, []);
+  assert.equal(sendte.length, 1);
+  assert.equal(sendte[0].disable_notification, true);
+  assert.ok(sendte[0].text.includes('sol'));
 });
 
 test('«ring meg» går ut med lyd', async () => {
@@ -201,9 +190,9 @@ test('å rette dagen sender ikke varselet på nytt', async () => {
   const hennes = await loggInn('lykke');
   const dag = { humor: 2, gode_ting: [{ tekst: 'kaffe' }] };
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: dag });
-  assert.equal(sendte.length, 1);
+  const førsteRunde = sendte.length;
   await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { ...dag, gode_ting: [{ tekst: 'kaffe og sol' }] } });
-  assert.equal(sendte.length, 1, 'samme dag skal bare varsle én gang');
+  assert.equal(sendte.length, førsteRunde, 'samme dag skal bare varsle én gang');
 });
 
 test('dager langt tilbake kan ikke føres', async () => {
@@ -214,20 +203,139 @@ test('dager langt tilbake kan ikke føres', async () => {
 
 /* ---------- den andre veien ---------- */
 
-test('hilsener og brev går fra ham til henne', async () => {
+test('brev går fra ham til henne, og røpes ikke før hun åpner det', async () => {
   const hans = await loggInn('mathias');
-  await kall('/hilsen', { metode: 'POST', cookie: hans, kropp: { tekst: 'God morgen.' } });
   await kall('/brev', { metode: 'POST', cookie: hans, kropp: { tekst: 'Til en tung dag.' } });
 
   const hennes = await loggInn('lykke');
   const t = await (await kall('/tilstand', { cookie: hennes })).json();
-  assert.equal(t.hilsen.tekst, 'God morgen.');
   assert.equal(t.brev.length, 1);
-  assert.equal(t.brev[0].tekst, undefined, 'brevet skal ikke røpes før hun åpner det');
+  assert.equal(t.brev[0].tekst, undefined);
 
   const brev = await (await kall(`/brev/${t.brev[0].id}/apne`, { metode: 'POST', cookie: hennes })).json();
   assert.equal(brev.tekst, 'Til en tung dag.');
   assert.ok(alleMeldinger().includes('åpnet brevet'));
+});
+
+/* ---------- meldinger begge veier ---------- */
+
+test('meldinger går begge veier, og hennes plinger hos ham', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'God morgen.' } });
+  assert.deepEqual(sendte, [], 'hans egne meldinger skal ikke varsle ham selv');
+
+  const hennes = await loggInn('lykke');
+  await kall('/melding', { metode: 'POST', cookie: hennes, kropp: { tekst: 'Er på vei hjem.' } });
+  assert.equal(sendte.length, 1);
+  assert.ok(sendte[0].text.includes('Er på vei hjem.'));
+
+  const t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.deepEqual(t.meldinger.map((m) => [m.fra, m.tekst]), [
+    ['mathias', 'God morgen.'],
+    ['lykke', 'Er på vei hjem.'],
+  ], 'eldste først, så samtalen leses ovenfra og ned');
+});
+
+test('tomme meldinger avvises', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: '   ' } })).status, 400);
+});
+
+test('«lest» gjelder bare den andres meldinger', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'fra ham' } });
+  const hennes = await loggInn('lykke');
+  await kall('/melding', { metode: 'POST', cookie: hennes, kropp: { tekst: 'fra henne' } });
+
+  await kall('/meldinger/lest', { metode: 'POST', cookie: hennes });
+  const t = await (await kall('/tilstand', { cookie: hennes })).json();
+  const lest = Object.fromEntries(t.meldinger.map((m) => [m.fra, Boolean(m.lest_kl)]));
+  assert.equal(lest.mathias, true);
+  assert.equal(lest.lykke, false, 'hennes egne skal ikke merkes lest av henne selv');
+});
+
+/* ---------- ønskelista ---------- */
+
+test('begge kan legge til ønsker, og huke dem av og på igjen', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/onske', { metode: 'POST', cookie: hans, kropp: { tekst: 'Bade i Nordsjøen' } });
+  const hennes = await loggInn('lykke');
+  await kall('/onske', { metode: 'POST', cookie: hennes, kropp: { tekst: 'Kino på en tirsdag' } });
+
+  let t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.equal(t.onsker.length, 2);
+  const id = t.onsker.find((o) => o.tekst === 'Bade i Nordsjøen').id;
+
+  await kall(`/onske/${id}/gjort`, { metode: 'POST', cookie: hennes });
+  t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.equal(t.onsker.find((o) => o.id === id).gjort_av, 'lykke');
+
+  await kall(`/onske/${id}/gjort`, { metode: 'POST', cookie: hennes });
+  t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.equal(t.onsker.find((o) => o.id === id).gjort_kl, null, 'skal kunne angres');
+});
+
+test('gjorte ønsker havner nederst', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/onske', { metode: 'POST', cookie, kropp: { tekst: 'først' } });
+  await kall('/onske', { metode: 'POST', cookie, kropp: { tekst: 'sist' } });
+  let t = await (await kall('/tilstand', { cookie })).json();
+  const id = t.onsker.find((o) => o.tekst === 'sist').id;
+  await kall(`/onske/${id}/gjort`, { metode: 'POST', cookie });
+  t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.onsker.at(-1).tekst, 'sist');
+});
+
+test('ønsker kan slettes', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/onske', { metode: 'POST', cookie, kropp: { tekst: 'feiltrykk' } });
+  const t = await (await kall('/tilstand', { cookie })).json();
+  await kall(`/onske/${t.onsker[0].id}`, { metode: 'DELETE', cookie });
+  const etter = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(etter.onsker.length, 0);
+});
+
+/* ---------- arkivet ---------- */
+
+test('arkivet søker, og han ser bare det hun har delt', async () => {
+  const hennes = await loggInn('lykke');
+  await kall('/dag', {
+    metode: 'POST',
+    cookie: hennes,
+    kropp: { humor: 4, gode_ting: [{ tekst: 'bålkaffe ved vannet' }, { tekst: 'du ringte', om_oss: true }] },
+  });
+  await kall('/dag', {
+    metode: 'POST',
+    cookie: hennes,
+    kropp: { dato: flyttDag(dagsnokkel(new Date(), 'Europe/Oslo'), -1), humor: 3, gode_ting: [{ tekst: 'hemmelig kaffe' }], privat: true },
+  });
+
+  const hennesTreff = await (await kall('/arkiv?sok=kaffe', { cookie: hennes })).json();
+  assert.equal(hennesTreff.antall, 2);
+
+  const oss = await (await kall('/arkiv?oss=ja', { cookie: hennes })).json();
+  assert.deepEqual(oss.treff.map((t) => t.tekst), ['du ringte']);
+
+  const hans = await loggInn('mathias');
+  const hansTreff = await (await kall('/arkiv?sok=kaffe', { cookie: hans })).json();
+  assert.deepEqual(hansTreff.treff.map((t) => t.tekst), ['bålkaffe ved vannet'],
+    'det hun holdt tilbake skal ikke være søkbart for ham');
+});
+
+/* ---------- ukesbildet ---------- */
+
+test('uka teller bare dager hun har delt', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: idag, humor: 4 } });
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -1), humor: 2 } });
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -2), humor: 1, privat: true } });
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.uke.ført, 2);
+  assert.equal(t.uke.tunge, 1);
+  assert.equal(t.uke.gode, 1);
+  assert.equal(t.uke.snitt, 3);
 });
 
 test('glasset trekker fra det hun har skrevet før', async () => {
@@ -291,4 +399,105 @@ test('har det vært stille i flere dager, sies det fra', async () => {
   await worker.scheduled({ scheduledTime: I_VINDUET }, env, ctx);
   const tekster = sendte.map((s) => s.text).join('\n');
   assert.ok(tekster.includes('5 dager siden'), tekster);
+});
+
+/* ---------- én dag om gangen, for kalenderen ---------- */
+
+test('en enkelt dag kan hentes, og han får den gjennom filteret', async () => {
+  const hennes = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', {
+    metode: 'POST',
+    cookie: hennes,
+    kropp: { dato: idag, humor: 2, tungt: 'noe privat', privat: true },
+  });
+
+  const hennesDag = await (await kall(`/dag?dato=${idag}`, { cookie: hennes })).json();
+  assert.equal(hennesDag.dag.tungt, 'noe privat');
+
+  const hans = await loggInn('mathias');
+  const hansDag = await (await kall(`/dag?dato=${idag}`, { cookie: hans })).json();
+  assert.equal(hansDag.dag.privat, true);
+  assert.equal(hansDag.dag.tungt, undefined, 'en privat dag har ikke noe innhold for ham');
+});
+
+test('ugyldig dato avvises', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await kall('/dag?dato=i-morgen', { cookie })).status, 400);
+});
+
+/* ---------- delt modus ---------- */
+
+test('delt modus varsler hver dag, også de helt vanlige', async () => {
+  env.DELT_MODUS = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 3, gode_ting: [{ tekst: 'grei kaffe' }] } });
+
+  const dagsvarsel = sendte.filter((m) => m.text.includes('førte dagen'));
+  assert.equal(dagsvarsel.length, 1);
+  assert.equal(dagsvarsel[0].disable_notification, true, 'hverdagen skal ikke pipe');
+  assert.ok(dagsvarsel[0].text.includes('grei kaffe'));
+});
+
+test('delt modus sender det hun skrev, og ber ikke om lov', async () => {
+  env.DELT_MODUS = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/dag', {
+    metode: 'POST',
+    cookie,
+    // Selv om klienten skulle sende valgene, finnes de ikke i denne modusen.
+    kropp: { humor: 2, tungt: 'sliten av alt', del_tungt: false, privat: true },
+  });
+  assert.ok(alleMeldinger().includes('sliten av alt'));
+
+  const hans = await loggInn('mathias');
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.equal(t.delt, true);
+  assert.equal(t.idag.privat, false, 'privat-valget finnes ikke i delt modus');
+  assert.equal(t.idag.tungt, 'sliten av alt');
+});
+
+test('delt modus sier fra når hun er inne, høyst én gang i timen', async () => {
+  env.DELT_MODUS = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/tilstand', { cookie });
+  await kall('/tilstand', { cookie });
+  await kall('/tilstand', { cookie });
+  const aktiv = sendte.filter((m) => m.text.includes('inne i appen'));
+  assert.equal(aktiv.length, 1);
+  assert.equal(aktiv[0].disable_notification, true);
+});
+
+test('at han åpner appen, varsler ingen', async () => {
+  env.DELT_MODUS = 'ja';
+  const cookie = await loggInn('mathias');
+  sendte.length = 0;
+  await kall('/tilstand', { cookie });
+  assert.deepEqual(sendte, []);
+});
+
+test('delt modus gjør alt søkbart for ham', async () => {
+  env.DELT_MODUS = 'ja';
+  const hennes = await loggInn('lykke');
+  await kall('/dag', {
+    metode: 'POST',
+    cookie: hennes,
+    kropp: { humor: 3, gode_ting: [{ tekst: 'stille morgen' }], privat: true },
+  });
+  const hans = await loggInn('mathias');
+  const treff = await (await kall('/arkiv?sok=stille', { cookie: hans })).json();
+  assert.deepEqual(treff.treff.map((t) => t.tekst), ['stille morgen']);
+});
+
+test('«ring meg» går fortsatt med lyd i delt modus', async () => {
+  env.DELT_MODUS = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, behov: 'ringe' } });
+  const rop = sendte.filter((m) => m.text.includes('trenger deg nå'));
+  assert.equal(rop.length, 1);
+  assert.equal(rop[0].disable_notification, false);
 });

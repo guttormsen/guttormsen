@@ -7,8 +7,10 @@
  * legge appen ut.
  *
  *   npm run oppsett
+ *
+ * Det kan kjøres om igjen. Steg som alt er gjort, hoppes over.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { dirname, join } from 'node:path';
@@ -16,18 +18,33 @@ import { fileURLToPath } from 'node:url';
 
 const ROT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TOML = join(ROT, 'wrangler.toml');
+const DB = 'lykkeglasset';
 const les = createInterface({ input: process.stdin, output: process.stdout });
 
 const si = (...t) => console.log(...t);
 const overskrift = (t) => si(`\n\x1b[1m${t}\x1b[0m`);
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** Kjører wrangler og lar den skrive rett til skjermen. */
-const wrangler = (args, valg = {}) =>
-  spawnSync('npx', ['wrangler', ...args], { cwd: ROT, stdio: 'inherit', ...valg });
+/** Lar wrangler skrive rett til skjermen, så du kan svare på det den spør om. */
+function wrangler(args) {
+  const res = spawnSync('npx', ['wrangler', ...args], { cwd: ROT, stdio: 'inherit', shell: process.platform === 'win32' });
+  if (res.error) throw new Error(`Fikk ikke kjørt wrangler: ${res.error.message}`);
+  return res.status === 0;
+}
 
-/** Kjører wrangler og fanger utskriften, for når vi skal lese noe ut av den. */
-const wranglerStille = (args) =>
-  execFileSync('npx', ['wrangler', ...args], { cwd: ROT, encoding: 'utf8' });
+/**
+ * Kjører wrangler og fanger utskriften. `CI` settes fordi wrangler ellers kan
+ * stille et spørsmål ingen ser – utskriften går jo ikke til skjermen her.
+ */
+function wranglerStille(args) {
+  const res = spawnSync('npx', ['wrangler', ...args], {
+    cwd: ROT,
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1' },
+    shell: process.platform === 'win32',
+  });
+  return `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
+}
 
 async function spør(tekst, { påkrevd = true } = {}) {
   for (;;) {
@@ -37,14 +54,36 @@ async function spør(tekst, { påkrevd = true } = {}) {
   }
 }
 
-/** Sender en hemmelighet inn til wrangler på standard inn, så den aldri blir et argument. */
+const jaNei = async (tekst) => /^j/i.test(await spør(`${tekst} [j/N]`, { påkrevd: false }) || 'n');
+
+/** Sender hemmeligheten på standard inn, så den aldri blir et argument. */
 function settHemmelighet(navn, verdi) {
   const res = spawnSync('npx', ['wrangler', 'secret', 'put', navn], {
     cwd: ROT,
     input: `${verdi}\n`,
     stdio: ['pipe', 'inherit', 'inherit'],
+    shell: process.platform === 'win32',
   });
   if (res.status !== 0) throw new Error(`Fikk ikke satt ${navn}`);
+  return true;
+}
+
+/** Finner databasens id, enten den er ny eller laget fra før. */
+function finnDatabaseId() {
+  const laget = wranglerStille(['d1', 'create', DB]);
+  const fraNy = laget.match(UUID);
+  if (fraNy) return fraNy[0];
+
+  // Finnes den alt, sier `create` ifra, og `info` vet id-en.
+  const info = wranglerStille(['d1', 'info', DB]);
+  const fraInfo = info.match(UUID);
+  if (fraInfo) return fraInfo[0];
+
+  si(laget.trim());
+  si(info.trim());
+  throw new Error(
+    'Fant ikke database-id. Kjør «npx wrangler d1 info lykkeglasset» og lim id-en inn i wrangler.toml.',
+  );
 }
 
 try {
@@ -53,59 +92,71 @@ try {
   si('Cloudflare – ingenting av det havner i koden eller på GitHub.');
 
   /* 1. Innlogging */
-  overskrift('1. Cloudflare');
+  overskrift('1 av 5 · Cloudflare');
   si('En nettleser åpner seg. Lag konto hvis du ikke har – det er gratis og');
-  si('krever ikke kort.');
-  wrangler(['login']);
-
-  /* 2. Database */
-  overskrift('2. Database');
-  let toml = readFileSync(TOML, 'utf8');
-  if (toml.includes('SETT_INN_HER')) {
-    const ut = wranglerStille(['d1', 'create', 'lykkeglasset']);
-    const id = ut.match(/database_id\s*=\s*"([0-9a-f-]+)"/i)?.[1]
-      ?? ut.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1];
-    if (!id) {
-      si(ut);
-      throw new Error('Fant ikke database_id i svaret. Lim den inn i wrangler.toml for hånd.');
-    }
-    toml = toml.replace('SETT_INN_HER', id);
-    writeFileSync(TOML, toml);
-    si(`  database_id satt til ${id}`);
-  } else {
-    si('  Databasen er alt satt opp i wrangler.toml – hopper over.');
+  si('krever ikke betalingskort.\n');
+  if (!wrangler(['login'])) {
+    si('\nInnloggingen svarte ikke OK. Er du alt logget inn, er det helt i orden.');
+    if (!await jaNei('Gå videre?')) process.exit(1);
   }
 
-  overskrift('3. Tabeller');
-  wrangler(['d1', 'execute', 'lykkeglasset', '--remote', '--file=schema.sql', '--yes']);
+  /* 2. Database */
+  overskrift('2 av 5 · Database');
+  let toml = readFileSync(TOML, 'utf8');
+  if (toml.includes('SETT_INN_HER')) {
+    const id = finnDatabaseId();
+    writeFileSync(TOML, toml.replace('SETT_INN_HER', id));
+    toml = readFileSync(TOML, 'utf8');
+    si(`  database_id satt til ${id}`);
+  } else {
+    si('  Står alt i wrangler.toml. Hopper over.');
+  }
+
+  /* 3. Tabeller */
+  overskrift('3 av 5 · Tabeller');
+  si('  (schema.sql kan kjøres om igjen uten at noe går tapt)\n');
+  if (!wrangler(['d1', 'execute', DB, '--remote', '--file=schema.sql', '--yes'])) {
+    throw new Error('Fikk ikke satt inn tabellene.');
+  }
 
   /* 4. Hemmeligheter */
-  overskrift('4. Koder og token');
-  si('Kodene er det dere to taster inn i appen. Velg noe dere husker, men som');
-  si('ikke er de fire sifrene telefonen deres låses opp med.\n');
+  overskrift('4 av 5 · Koder og token');
+  si('Kodene er det dere to taster inn i appen. Velg noe dere husker, men');
+  si('ikke de fire sifrene telefonen låses opp med. Minst seks tegn.\n');
 
   const kodeLykke = await spør('Kode for Lykke:');
   const kodeMathias = await spør('Kode for Mathias:');
-  si('\nTelegram-token får du av @BotFather i Telegram (/mybots → API Token).');
+  si('\nTelegram-token får du av @BotFather i Telegram: /mybots → velg boten');
+  si('→ API Token. Har tokenet vært innom en chat eller e-post, lag et nytt');
+  si('med /revoke først.\n');
   const token = await spør('Telegram-token:');
 
   settHemmelighet('KODE_LYKKE', kodeLykke);
   settHemmelighet('KODE_MATHIAS', kodeMathias);
   settHemmelighet('TELEGRAM_TOKEN', token);
   // Sesjonsnøkkelen skal ingen taste inn, og ingen trenger å kunne.
-  settHemmelighet('SESJON_HEMMELIG', Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'));
+  settHemmelighet(
+    'SESJON_HEMMELIG',
+    Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'),
+  );
 
   /* 5. Ut i verden */
-  overskrift('5. Legger ut');
-  wrangler(['deploy']);
+  overskrift('5 av 5 · Legger ut');
+  si('Blir du spurt om et workers.dev-underdomene: velg et navn og svar ja.\n');
+  if (!wrangler(['deploy'])) throw new Error('Utleggingen feilet. Se meldingen over.');
 
   overskrift('Ferdig');
-  si('Adressen står rett over. Åpne den på telefonen og legg den til på');
-  si('hjemskjermen – da ser den ut som en app og varslene virker som de skal.');
-  si('\nEn ting til: send en melding i Telegram-gruppa og sjekk at boten');
-  si('faktisk er medlem der. Uten det kommer ingen varsler fram.');
+  si('Adressen står rett over, og ser slik ut:');
+  si('\n    https://lykkeglasset.<ditt-navn>.workers.dev\n');
+  si('Åpne den på telefonen og legg den til på hjemskjermen – da ser den ut');
+  si('som en app, og den åpner seg uten nettleserlinje.');
+  si('\nTo ting igjen:');
+  si('  • Legg boten inn i Telegram-gruppa, og send en melding der etterpå.');
+  si('    Uten det kommer ingen varsler fram.');
+  si('  • Prøv en dag med 2 av 5 og se at det plinger.');
+  si('\nNoe som ikke virker? «npm run logg» viser hva som skjer i sanntid.');
 } catch (feil) {
-  console.error(`\n✖ ${feil.message}`);
+  console.error(`\n\x1b[31m✖ ${feil.message}\x1b[0m`);
   process.exitCode = 1;
 } finally {
   les.close();
