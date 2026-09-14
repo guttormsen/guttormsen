@@ -63,6 +63,26 @@ export function formatDuration(seconds) {
   return `${hours} t ${minutes} min`;
 }
 
+/**
+ * «32–48 min» i stedet for «32 min–48 min».
+ *
+ * Enheten gjentas bare når den faktisk er forskjellig. På en telefon er
+ * forskjellen nok til at tallene får plass på én linje.
+ */
+export function formatDurationRange(lowSeconds, highSeconds) {
+  const low = formatDuration(lowSeconds);
+  const high = formatDuration(highSeconds);
+  if (low === '–' || high === '–') return '–';
+
+  // Bare når begge er ett enkelt tall med samme enhet: «32 min» + «48 min».
+  // «1 t 30 min» har to enheter, og der ville en sammentrekning bli uklar.
+  const simple = /^(\d+) (min|t)$/;
+  const a = low.match(simple);
+  const b = high.match(simple);
+  if (a && b && a[2] === b[2]) return `${a[1]}–${high}`;
+  return `${low}–${high}`;
+}
+
 /** 14:05 */
 export function formatClock(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '–';

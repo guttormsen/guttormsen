@@ -139,6 +139,13 @@ try {
     throw error;
   }
 
+  /* Første gang: tre linjer om hvordan appen brukes. */
+  check('første besøk får en kort innføring', await page.locator('#intro').isVisible());
+  check('innføringen har tre punkter', (await page.locator('.intro__line').count()) === 3);
+  await page.click('#intro .btn');
+  await page.waitForTimeout(300);
+  check('innføringen lukkes med knappen', await page.locator('#intro').isHidden());
+
   check('appen åpner på turforslag', await page.locator('.tab[data-tab="finn"].is-active').count() === 1);
   check('filterbrikkene tar ikke plass fra start', (await page.locator('.filters').count()) === 0);
   check('angre og tøm er skjult til man tegner', await page.locator('#draw-tools').isHidden());
@@ -559,6 +566,13 @@ try {
   const mobile = await phone.newPage();
   await mobile.goto(base, { waitUntil: 'domcontentloaded' });
   await mobile.waitForFunction(() => Boolean(window.lykkeligtur), null, { timeout: 20000 });
+  await mobile.waitForTimeout(400);
+  check('innføringen kommer bare én gang per enhet', await mobile.locator('#intro').isVisible());
+  await mobile.click('#intro .btn');
+  await mobile.reload({ waitUntil: 'domcontentloaded' });
+  await mobile.waitForFunction(() => Boolean(window.lykkeligtur), null, { timeout: 20000 });
+  await mobile.waitForTimeout(400);
+  check('innføringen er borte neste gang', await mobile.locator('#intro').isHidden());
   await goToTestView(mobile);
   await mobile.waitForTimeout(1500);
 

@@ -91,6 +91,13 @@ Når man tegner selv, følger ruta stier automatisk. En rett strek over stup og
 vann er nesten aldri det noen mener med et trykk i kartet, så «følg sti» er på
 som standard og kan slås av under Avansert.
 
+### Første gang
+
+Første gang appen åpnes ligger et lite kort over kartet med tre linjer: kartet
+viser merkede stier, panelet nederst kan dras, og turmodus sier hvor langt det
+er igjen. Det lukkes med én knapp – eller tilbakeknappen – og kommer ikke
+tilbake. Ingenting er sperret bak det.
+
 ### Tilbake virker
 
 Lagt til hjemskjerm har appen ingen nettleserlinje. Da er tilbakeknappen på
@@ -323,8 +330,9 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   185 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 77 sjekker mot ekte tjenester
+test/                   186 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 82 sjekker mot ekte tjenester
+scripts/skjermbilder.mjs bilder av hver skjerm på telefonstørrelse
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

@@ -1,8 +1,8 @@
 /**
  * Oppstart og lim. Her kobles kart, tilstand, API-er og panel sammen.
  */
-import { BASEMAPS, DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
-import { $, debounce, formatDistance, render } from './util.js';
+import { APP, BASEMAPS, DEFAULT_OPTIONS, ELEVATION_MAX_SAMPLES, ELEVATION_MIN_SPACING, TRAIL_WMS } from './config.js';
+import { $, debounce, formatDistance, render, store } from './util.js';
 import { closestPointOnPath, densify, pathLength, simplify } from './geo.js';
 import { summarise } from './route.js';
 import { fetchElevations } from './api/hoydedata.js';
@@ -836,6 +836,26 @@ function updateSearchHere() {
   button.textContent = discovery.searched ? '🔍 Søk i dette området' : '🔍 Finn turer her';
 }
 
+/* ---------- Første gang ---------- */
+
+const introKey = `${APP.storageKey}.sett-intro`;
+
+function closeIntro({ remember = true } = {}) {
+  const box = $('#intro');
+  if (box.hidden) return;
+  box.hidden = true;
+  if (remember) store.set(introKey, true);
+}
+
+function maybeShowIntro() {
+  if (store.get(introKey, false)) return;
+  const box = $('#intro');
+  render(box, panels.renderIntro(handlers).flat().filter(Boolean));
+  box.hidden = false;
+  // Tilbakeknappen skal lukke kortet, ikke appen.
+  openLayer('intro', () => closeIntro());
+}
+
 /* ---------- Kartet med på tur ---------- */
 
 /**
@@ -999,6 +1019,7 @@ const handlers = {
   onRetryPois: () => {
     if (S.state.summary) loadPois(S.state.summary);
   },
+  onCloseIntro: () => closeLayer('intro'),
   onDownloadOffline: () => downloadOfflineMap(),
   onCancelOffline: () => offlineRun?.abort(),
   onToggleCheck: (index, value) => {
@@ -1576,3 +1597,6 @@ boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
 window.lykkeligtur = { state: S.state, view, sheet, closeStack, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };
+
+// Helt til slutt: da er både lagstabelen og handlingene på plass.
+maybeShowIntro();

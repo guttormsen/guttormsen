@@ -21,6 +21,7 @@ import {
   formatDay,
   formatDistance,
   formatDuration,
+  formatDurationRange,
   formatElevation,
   formatNumber,
 } from './util.js';
@@ -97,7 +98,7 @@ export function renderStats(summary, loading) {
       stat(
         'Tidsbruk',
         formatDuration(time.totalSeconds),
-        `${formatDuration(time.lowSeconds)}–${formatDuration(time.highSeconds)}`,
+        formatDurationRange(time.lowSeconds, time.highSeconds),
       ),
     ]),
     el('div', { class: 'stats__row' }, [
@@ -169,6 +170,32 @@ export function renderPreview(trip, handlers) {
       text: 'Velg denne turen',
       onclick: () => handlers.onPickTrip(trip),
     }),
+  ];
+}
+
+/* ---------- Første gang ---------- */
+
+/**
+ * Tre linjer om hvordan appen brukes, vist én gang.
+ *
+ * Ingenting her er nødvendig for å komme videre – kortet ligger over kartet og
+ * lukkes med én knapp, tilbakeknappen eller Escape.
+ */
+export function renderIntro(handlers) {
+  const line = (icon, title, text) =>
+    el('li', { class: 'intro__line' }, [
+      el('span', { class: 'intro__icon', 'aria-hidden': 'true', text: icon }),
+      el('span', {}, [el('strong', { text: title }), el('span', { text: ` ${text}` })]),
+    ]);
+
+  return [
+    el('h2', { class: 'intro__title', text: 'Velkommen på tur' }),
+    el('ul', { class: 'intro__list' }, [
+      line('🗺️', 'Kartet viser merkede stier.', 'Trykk på en av dem, så ser du hvor lang den er og hva som finnes underveis.'),
+      line('👆', 'Dra i panelet nederst.', 'Da får du hele lista over turer der du står.'),
+      line('🥾', 'Start turen når du går.', 'Appen sier hvor langt det er igjen og hvilken vei du skal.'),
+    ]),
+    el('button', { class: 'btn btn--primary', type: 'button', text: 'Da er jeg klar', onclick: handlers.onCloseIntro }),
   ];
 }
 

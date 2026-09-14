@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clamp, formatDistance, formatDuration, formatElevation, mapLimit } from '../src/js/util.js';
+import { clamp, formatDistance, formatDuration, formatDurationRange, formatElevation, mapLimit } from '../src/js/util.js';
 
 /** Norsk tallformat bruker hardt mellomrom som tusenskille. */
 const normalise = (text) => text.replace(/[  ]/g, ' ');
@@ -49,4 +49,13 @@ test('mapLimit bevarer rekkefølgen og begrenser samtidighet', async () => {
 
 test('mapLimit takler tom liste', async () => {
   assert.deepEqual(await mapLimit([], 3, async () => 1), []);
+});
+
+test('tidsspenn gjentar ikke enheten unødig', () => {
+  assert.equal(formatDurationRange(32 * 60, 48 * 60), '32–48 min');
+  assert.equal(formatDurationRange(60 * 60, 120 * 60), '1–2 t');
+  // To enheter i hver ende ville blitt uklart sammentrukket.
+  assert.equal(formatDurationRange(90 * 60, 150 * 60), '1 t 30 min–2 t 30 min');
+  assert.equal(formatDurationRange(50 * 60, 70 * 60), '50 min–1 t 10 min');
+  assert.equal(formatDurationRange(Number.NaN, 600), '–');
 });
