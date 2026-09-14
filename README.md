@@ -36,7 +36,7 @@ ved første besøk etter navnebyttet.
 | **Vær der du er, når du er der** | Været hentes ikke bare for startpunktet, men for hvert sjekkpunkt langs ruta, på klokkeslettet du er beregnet å være der. |
 | **Dagslyssjekk** | Sammenligner beregnet sluttid med solnedgangen og sier fra hvis du havner i mørket. |
 | **Snøskredvarsel** | Varsom-varselet for regionen ruta går gjennom, med faregrad og råd. |
-| **Langs ruta** | Hytter, gapahuker, topper, drikkevann, bålplasser, parkering og busstopp innenfor 700 meter. |
+| **Langs ruta** | Hytter, gapahuker, fjellstuer, topper, drikkevann, bålplasser, parkering og busstopp innenfor 400 meter av ruta – og aldri mer enn 300 meter unna den. Hvert sted sier hva det er, hvor høyt det ligger, hvor langt inn i turen du treffer det, om det er DNT, om det koster, når det er åpent og hvor mange senger det har, når OpenStreetMap vet det. Alle har lenke til veibeskrivelse. |
 | **Del og ta med** | Delbar lenke (hele turen ligger i URL-en), GPX ut og inn, lagring lokalt og offline-bruk. |
 
 ### Kom deg til start
@@ -90,6 +90,20 @@ Når man tegner selv, følger ruta stier automatisk. En rett strek over stup og
 vann er nesten aldri det noen mener med et trykk i kartet, så «følg sti» er på
 som standard og kan slås av under Avansert.
 
+### Tilbake virker
+
+Lagt til hjemskjerm har appen ingen nettleserlinje. Da er tilbakeknappen på
+Android – eller sveipen fra kanten på iPhone – den eneste veien ut av noe man
+har åpnet. Alt som legger seg over kartet melder seg inn i en lagstabel, og et
+tilbaketrykk tar det øverste laget først:
+
+    kartlagsmeny  →  filtre  →  forhåndsvisning  →  oppslått ark  →  fane
+
+Er alt lukket, gjør tilbake det den skal: lukker appen. Nyere nettlesere har
+[CloseWatcher](https://developer.mozilla.org/en-US/docs/Web/API/CloseWatcher),
+som er laget nettopp for dette og som også fanger Escape. Der den mangler,
+legges det én historikkoppføring per lag. Begge veier ender i `closestack.js`.
+
 ### Ett ark, tre stillinger
 
 På mobil ligger alt innholdet i et ark nederst. Det kan **dras med fingeren**,
@@ -105,10 +119,32 @@ Hele toppen av arket er dragflate – håndtaket, fanene og turlinja under turen
 Det er mye lettere å treffe enn en tynn strek. Ett trykk på håndtaket slår
 arket opp eller sammen.
 
+Arket overtar først når fingeren faktisk har flyttet seg seks piksler. Fanges
+pekeren med én gang, blir klikket omadressert til dragflaten, og fanene inni
+den slutter å virke. Etter et drag spises det neste klikket, ellers ville
+arket sprette tilbake fordi håndtaket rakk å flytte seg under fingeren.
+
 Knappene som ligger i kartet – «Start turen», navnet på stien under fingeren,
 forhåndsvisningen og meldingene – vet hvor høyt arket står og legger seg rett
 over det. De blir aldri liggende bak arket. Det samme gjelder kartutsnittet:
 når en tur vises, får den plass i den delen av kartet du faktisk ser.
+
+Turen er én sammenhengende flate å rulle i. Nøkkeltallene og høydeprofilen lå
+før i et eget fast felt, så panelet var delt i to som rullet hver for seg.
+
+### Filtrene viser alt de har
+
+Filtrene lå i tre rader som rullet sidelengs. To tredeler av valgene lå utenfor
+skjermkanten, i rader man måtte gjette at kunne dras. Nå brytes brikkene over
+flere linjer under hver sin overskrift – «Hvor lang tur?», «Hva vil du ha med?»,
+«Hvor krevende?», «Hva slags tur?» – og alt er synlig med én gang.
+
+- Å åpne filtrene drar arket helt opp, så man ser hele lista.
+- «Vis 34 turer» nederst lukker dem og setter arket tilbake med kartet synlig.
+- Lista blir stående der den står når man trykker på et filter. Før hoppet den
+  til toppen hver gang.
+- Slått sammen vises de påslåtte filtrene som brikker man kan trykke av, så det
+  aldri er skjult hvorfor lista er kort.
 
 ### Enkelt foran, avansert bak
 
@@ -252,6 +288,7 @@ src/js/
   journal.js            turdagbok, merker og sammenligninger
   photos.js             kobler bilder til riktig tur og siler bort kart og logoer
   sheet.js              bunnarket på mobil: drag, kast og tre stillinger
+  closestack.js         tilbakeknappen: hvilket lag som lukkes først
   trailhit.js           finner hvilken sti som ligger under fingeren
   navigate.js           hvor du er på ruta, hva som gjenstår, og hvilken vei
   features.js           hva finnes langs ruta: bading, bål, buss, tilgjengelighet
@@ -267,8 +304,8 @@ src/js/
   ui.js                 varsler, nedlasting, små byggeklosser
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
-test/                   163 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 60 sjekker mot ekte tjenester
+test/                   171 enhetstester
+test/e2e/smoke.mjs      røyktest i Chromium, 76 sjekker mot ekte tjenester
 ```
 
 Modulene kjenner ikke hverandre på kryss og tvers: `state.js` roper ut at turen

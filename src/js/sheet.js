@@ -86,20 +86,29 @@ export function createSheet(panel, grabber, { peekHeight, isActive = () => true,
       .sort((a, b) => a.distance - b.distance)[0].name;
   }
 
-  grabber.addEventListener('pointerdown', (event) => {
-    dragging = true;
-    startY = event.clientY;
-    lastY = event.clientY;
-    lastTime = event.timeStamp;
-    velocity = 0;
-    startOffset = offsetFor(state);
-    grabber.setPointerCapture(event.pointerId);
-    panel.style.transition = 'none';
-  });
+  /** Hvor langt fingeren må flytte seg før det regnes som et drag. */
+  const SLOP = 6;
 
-  grabber.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
+  /** Knapper og lenker i dragflaten skal virke som knapper. */
+  const isControl = (node) => Boolean(node?.closest?.('button, a, input, select, textarea, [role="button"]'));
+
+  let pressed = false;
+  let pointerId = null;
+  let onControl = false;
+
+  function onMove(event) {
+    if (!pressed || event.pointerId !== pointerId) return;
     const delta = event.clientY - startY;
+    if (!dragging) {
+      /*
+       * Først når fingeren faktisk har flyttet seg tar arket over. Fanger vi
+       * pekeren med én gang, blir klikket omadressert hit, og fanene i
+       * dragflaten slutter å virke.
+       */
+      if (Math.abs(delta) < SLOP) return;
+      dragging = true;
+      panel.style.transition = 'none';
+    }
     const elapsed = event.timeStamp - lastTime;
     if (elapsed > 0) velocity = (event.clientY - lastY) / elapsed;
     lastY = event.clientY;
@@ -110,22 +119,70 @@ export function createSheet(panel, grabber, { peekHeight, isActive = () => true,
     const eased = raw < 0 ? raw / 3 : raw > max ? max + (raw - max) / 3 : raw;
     apply(eased, false);
     event.preventDefault();
-  });
+  }
 
-  const end = (event) => {
-    if (!dragging) return;
-    dragging = false;
-    grabber.releasePointerCapture?.(event.pointerId);
-    const moved = Math.abs(event.clientY - startY);
-    // Kort trykk uten bevegelse er et trykk, ikke et drag.
-    if (moved < 6) {
-      go(state === 'peek' ? 'half' : 'peek');
+  function onUp(event) {
+    if (!pressed || event.pointerId !== pointerId) return;
+    pressed = false;
+    pointerId = null;
+    detach();
+    if (!dragging) {
+      // Et kort trykk på selve flaten slår arket opp eller sammen. Trykk på en
+      // knapp lar vi være i fred – den gjør sitt eget.
+      if (!onControl) go(state === 'peek' ? 'half' : 'peek');
       return;
     }
+    dragging = false;
+    swallowNextClick();
     go(settle(startOffset + (event.clientY - startY)));
-  };
-  grabber.addEventListener('pointerup', end);
-  grabber.addEventListener('pointercancel', end);
+  }
+
+  /*
+   * Når arket har flyttet seg, ligger et annet element under fingeren enn da
+   * man begynte – ofte håndtaket selv. Nettleseren sender likevel et klikk.
+   * Uten dette ville et drag oppover bli fulgt av et trykk som slo arket
+   * sammen igjen.
+   */
+  function swallowNextClick() {
+    const eat = (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+    };
+    window.addEventListener('click', eat, { capture: true, once: true });
+    // Kom det aldri noe klikk, skal vi ikke spise det neste ekte heller.
+    setTimeout(() => window.removeEventListener('click', eat, { capture: true }), 350);
+  }
+
+  /*
+   * Bevegelsen følges på hele vinduet, ikke bare på dragflaten. Drar man opp
+   * fra øverste kant av håndtaket, er fingeren over kartet allerede etter
+   * noen piksler – da må arket fortsatt henge med.
+   */
+  function attach() {
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function detach() {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+
+  grabber.addEventListener('pointerdown', (event) => {
+    if (!isActive() || pressed) return;
+    pressed = true;
+    dragging = false;
+    pointerId = event.pointerId;
+    onControl = isControl(event.target);
+    startY = event.clientY;
+    lastY = event.clientY;
+    lastTime = event.timeStamp;
+    velocity = 0;
+    startOffset = offsetFor(state);
+    attach();
+  });
 
   // Stillingene måles i piksler, så de må regnes om når skjermen endrer seg.
   const reflow = () => apply(offsetFor(state), false);

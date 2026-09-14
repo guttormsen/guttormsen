@@ -46,6 +46,8 @@ export const state = {
   sun: null,
   avalanche: null,
   pois: [],
+  /** Sant når Overpass ikke svarte. Da er tomt ikke det samme som ingenting. */
+  poiError: false,
 
   /** Turforslag i området brukeren ser på. */
   discovery: {

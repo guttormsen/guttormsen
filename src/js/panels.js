@@ -290,6 +290,42 @@ const gradeFilters = [
   { id: 'ekspert', ...GRADES.S },
 ];
 
+/**
+ * De påslåtte filtrene som brikker man kan trykke av. Vises når filterlista er
+ * slått sammen, så det aldri er skjult hvorfor lista er kort.
+ */
+function activeFilterChips(filters, handlers) {
+  const chips = [];
+  const off = (label, icon, onClick) =>
+    chips.push(
+      el('button', { class: 'chip chip--toggle is-on', type: 'button', title: `Skru av ${label}`, onclick: onClick }, [
+        icon && el('span', { 'aria-hidden': 'true', text: `${icon} ` }),
+        label,
+        el('span', { 'aria-hidden': 'true', class: 'chip__x', text: '✕' }),
+      ]),
+    );
+
+  for (const id of filters.lengths) {
+    const bucket = LENGTH_BUCKETS.find((b) => b.id === id);
+    if (bucket) off(bucket.label, bucket.icon, () => handlers.onToggleLength(id));
+  }
+  if (filters.maxMinutes != null) off('Under 1 time', '⏱️', () => handlers.onQuickTime(filters.maxMinutes));
+  for (const id of filters.features) {
+    off(FEATURES[id].label, FEATURES[id].icon, () => handlers.onToggleFeature(id));
+  }
+  for (const id of filters.grades) {
+    const grade = gradeFilters.find((g) => g.id === id);
+    if (grade) off(grade.label, null, () => handlers.onToggleGrade(id));
+  }
+  if (filters.shape) off('Rundtur', '🔄', () => handlers.onShape(filters.shape));
+  if (filters.markedOnly) off('Merket', '🚩', handlers.onToggleMarked);
+  if (filters.special) {
+    const type = Object.values(SPECIAL_TYPES).find((t) => t.id === filters.special);
+    if (type) off(type.label, type.icon, () => handlers.onSpecial(type.id));
+  }
+  return chips;
+}
+
 export function renderDiscover(discovery, filters, filtersOpen, handlers) {
   const nodes = [];
   const activeCount =
@@ -330,9 +366,19 @@ export function renderDiscover(discovery, filters, filtersOpen, handlers) {
   );
 
   if (filtersOpen) {
+    /* Én gruppe per spørsmål, med overskrift. Brikkene brytes over flere
+     * linjer i stedet for å rulle sidelengs – to tredeler av valgene lå før
+     * utenfor skjermen, i rader man måtte gjette at kunne dras. */
+    const group = (title, chips) =>
+      el('div', { class: 'filter-group' }, [
+        el('h3', { class: 'filter-group__title', text: title }),
+        el('div', { class: 'chips', role: 'group', 'aria-label': title }, chips),
+      ]);
+
     nodes.push(
-      el('div', { class: 'filters' }, [
-        el('div', { class: 'chips', role: 'group', 'aria-label': 'Hvor lang tur' },
+      el('div', { class: 'filters', id: 'filters' }, [
+        group(
+          'Hvor lang tur?',
           LENGTH_BUCKETS.map((bucket) =>
             chip(bucket.label, filters.lengths.includes(bucket.id), () => handlers.onToggleLength(bucket.id), {
               icon: bucket.icon,
@@ -340,7 +386,7 @@ export function renderDiscover(discovery, filters, filtersOpen, handlers) {
             }),
           ),
         ),
-        el('div', { class: 'chips', role: 'group', 'aria-label': 'Hva vil du ha med' }, [
+        group('Hva vil du ha med?', [
           chip('Under 1 time', filters.maxMinutes === 60, () => handlers.onQuickTime(60), {
             icon: '⏱️',
             title: 'Turer som tar under en time',
@@ -352,8 +398,9 @@ export function renderDiscover(discovery, filters, filtersOpen, handlers) {
             }),
           ),
         ]),
-        el('div', { class: 'chips', role: 'group', 'aria-label': 'Vanskegrad og type' }, [
-          ...gradeFilters.map((grade) =>
+        group(
+          'Hvor krevende?',
+          gradeFilters.map((grade) =>
             el('button', {
               type: 'button',
               class: `chip chip--toggle chip--dot${filters.grades.includes(grade.id) ? ' is-on' : ''}`,
@@ -364,6 +411,8 @@ export function renderDiscover(discovery, filters, filtersOpen, handlers) {
               onclick: () => handlers.onToggleGrade(grade.id),
             }),
           ),
+        ),
+        group('Hva slags tur?', [
           chip('Rundtur', filters.shape === 'rundtur', () => handlers.onShape('rundtur'), {
             icon: '🔄',
             title: 'Turer som ender der de startet',
@@ -376,13 +425,35 @@ export function renderDiscover(discovery, filters, filtersOpen, handlers) {
             chip(type.label, filters.special === type.id, () => handlers.onSpecial(type.id), { icon: type.icon }),
           ),
         ]),
-        hasActiveFilters(filters) &&
+        el('div', { class: 'filters__foot' }, [
           el('button', {
-            class: 'linkish linkish--small',
+            class: 'btn btn--primary',
             type: 'button',
-            text: 'Nullstill filtre',
-            onclick: handlers.onResetFilters,
+            text: discovery.searched ? `Vis ${discovery.visible.length} turer` : 'Ferdig',
+            onclick: handlers.onToggleFilters,
           }),
+          hasActiveFilters(filters) &&
+            el('button', {
+              class: 'btn',
+              type: 'button',
+              text: 'Nullstill',
+              onclick: handlers.onResetFilters,
+            }),
+        ]),
+      ]),
+    );
+  } else if (activeCount) {
+    /* Slått sammen skal man fortsatt se hva som er på – og kunne skru det av
+     * uten å åpne filtrene igjen. */
+    nodes.push(
+      el('div', { class: 'chips chips--active', role: 'group', 'aria-label': 'Aktive filtre' }, [
+        ...activeFilterChips(filters, handlers),
+        el('button', {
+          class: 'chip chip--toggle chip--clear',
+          type: 'button',
+          text: '✕ Nullstill',
+          onclick: handlers.onResetFilters,
+        }),
       ]),
     );
   }
@@ -554,31 +625,40 @@ function localInputValue(date) {
 }
 
 export function renderTrip(context, handlers) {
-  const { trip, summary, startTime, weather, sun, avalanche, pois, photos, article, loading, checklist, navigation, journeys } =
-    context;
+  const {
+    trip, summary, startTime, weather, sun, avalanche, pois, poiError, photos, article,
+    loading, checklist, navigation, journeys,
+  } = context;
   handlersRef = handlers;
 
   if (!summary) {
     return [
       el('div', { class: 'empty' }, [
         el('p', { class: 'empty__big', text: '🥾' }),
-        el('p', { class: 'empty__title', text: 'Ingen tur ennå' }),
-        el('p', { text: 'Trykk i kartet for å sette startpunktet, og en gang til for å legge på en strekning. Eller finn en ferdig tur under «Finn tur».' }),
-        el('button', { class: 'btn btn--primary', type: 'button', text: 'Se turforslag', onclick: handlers.onGoDiscover }),
+        el('p', { class: 'empty__title', text: 'Ingen tur valgt' }),
+        el('p', { text: 'Velg en av de merkede turene, så får du høydeprofil, vær langs ruta, bilder og veien til startpunktet her.' }),
+        el('button', { class: 'btn btn--primary', type: 'button', text: '🧭 Finn en tur', onclick: handlers.onGoDiscover }),
+        el('p', { class: 'hint', text: 'Vil du heller lage din egen? Bruk blyanten i kartet og trykk der du vil gå.' }),
+        el('button', { class: 'btn', type: 'button', text: '✏️ Tegn din egen rute', onclick: handlers.onDrawOwn }),
       ]),
     ];
   }
 
+  /*
+   * Rekkefølgen følger spørsmålene man stiller seg: Hvordan ser det ut? Hvordan
+   * kommer jeg meg dit? Hva finnes underveis? Hvordan blir været? Er det trygt?
+   * Først deretter innstillinger og finjustering.
+   */
   return [
     navigation.active ? navDetails(navigation, pois) : null,
     gallerySection(photos, loading.photos),
-    featureSection(featuresAlongRoute(pois)),
-    articleSection(article),
-    quickSettings(trip, startTime, handlers),
     gettingThereSection(summary, journeys, loading.journeys, handlers),
+    featureSection(featuresAlongRoute(pois)),
+    poiSection(pois, poiError, loading.pois, handlers),
+    articleSection(article),
     weatherSection(weather, sun, loading.weather, startTime),
     safetySection(summary, sun, avalanche, startTime, checklist, handlers),
-    poiSection(pois, summary, loading.pois, handlers),
+    quickSettings(trip, startTime, handlers),
     waypointSection(trip, summary, handlers),
     advancedSection(trip, handlers),
   ];
@@ -699,7 +779,8 @@ function gettingThereSection(summary, journeys, loading, handlers) {
     }),
   );
 
-  return section('Kom deg til start', body, { collapsible: true, open: false });
+  // Uten bil er dette ofte det som avgjør om turen blir noe av. Derfor åpen.
+  return section('Kom deg til start', body, { collapsible: true, open: true });
 }
 
 function quickSettings(trip, startTime, handlers) {
@@ -936,13 +1017,31 @@ function featureSection(features) {
   );
 }
 
-function poiSection(pois, summary, loading, handlers) {
-  if (loading) return section('Langs ruta', el('p', { class: 'hint', text: 'Ser etter hytter, topper og vann …' }), { collapsible: true, open: false });
-  if (!pois.length) {
-    return section('Langs ruta', el('p', { class: 'hint', text: 'Fant ingenting kartlagt langs denne ruta.' }), {
+function poiSection(pois, poiError, loading, handlers) {
+  if (loading) {
+    return section('Langs ruta', el('p', { class: 'hint', text: 'Ser etter hytter, topper og vann …' }), {
       collapsible: true,
-      open: false,
+      open: true,
     });
+  }
+  // Å si «her finnes ingenting» når vi ikke fikk spurt, er å lyve for folk
+  // som skal ut i fjellet.
+  if (poiError) {
+    return section(
+      'Langs ruta',
+      [
+        el('p', { class: 'hint', text: 'Fikk ikke kontakt med OpenStreetMap-tjenesten akkurat nå, så jeg vet ikke hva som ligger langs ruta. Den er en dugnad og er ofte travel.' }),
+        el('button', { class: 'btn', type: 'button', text: '↻ Prøv igjen', onclick: handlers.onRetryPois }),
+      ],
+      { collapsible: true, open: true },
+    );
+  }
+  if (!pois.length) {
+    return section(
+      'Langs ruta',
+      el('p', { class: 'hint', text: 'Ingenting er kartlagt langs denne ruta i OpenStreetMap. Det betyr ikke at det ikke finnes noe – bare at ingen har lagt det inn ennå.' }),
+      { collapsible: true, open: false },
+    );
   }
 
   // `along` og `offRoute` settes når severdighetene hentes.
@@ -950,48 +1049,87 @@ function poiSection(pois, summary, loading, handlers) {
 
   return section(
     'Langs ruta',
-    el('ul', { class: 'pois' },
-      withDistance.map((poi) =>
-        el('li', { class: 'poi-row' }, [
-          el('span', { class: 'poi-row__icon', 'aria-hidden': 'true', text: POI_KINDS[poi.kind].icon }),
-          el('span', { class: 'poi-row__body' }, [
-            el('button', { class: 'linkish', type: 'button', text: poi.name, onclick: () => handlers.onFocusPoi(poi) }),
-            el('span', {
-              class: 'poi-row__meta',
-              text: [
-                POI_KINDS[poi.kind].label,
-                poi.dnt ? 'DNT' : null,
-                Number.isFinite(poi.elevation) ? `${formatElevation(poi.elevation)} moh.` : null,
-                `${formatDistance(poi.along)} inn i turen`,
-              ]
-                .filter(Boolean)
-                .join(' · '),
-            }),
-            poi.wheelchair &&
-              el('span', {
-                class: `access access--${poi.wheelchair}`,
-                title: 'Rullestoltilgang slik OpenStreetMap oppgir den',
-                text:
-                  poi.wheelchair === 'ja'
-                    ? '♿ Rullestolvennlig'
-                    : poi.wheelchair === 'delvis'
-                      ? '♿ Delvis tilgjengelig'
-                      : '♿ Ikke tilrettelagt',
-              }),
-          ]),
-          (poi.website || poi.kind === 'hytte') &&
-            el('a', {
-              class: 'linkish linkish--small',
-              href: poi.website ?? `https://ut.no/sok?query=${encodeURIComponent(poi.name)}`,
-              target: '_blank',
-              rel: 'noopener',
-              text: poi.website ? 'Nettside' : 'ut.no',
-            }),
-        ]),
-      ),
-    ),
-    { collapsible: true, open: false, badge: String(withDistance.length) },
+    el('ul', { class: 'pois' }, withDistance.map((poi) => poiRow(poi, handlers))),
+    { collapsible: true, open: true, badge: String(withDistance.length) },
   );
+}
+
+/** Hva som er verdt å vite om et sted man passerer, og hvordan man kommer dit. */
+function poiRow(poi, handlers) {
+  const meta = [
+    POI_KINDS[poi.kind].label,
+    Number.isFinite(poi.elevation) ? `${formatElevation(poi.elevation)} moh.` : null,
+    `${formatDistance(poi.along)} inn i turen`,
+    // Ligger stedet et stykke unna, er det greit å vite før man går etter det.
+    poi.offRoute > 40 ? `${formatDistance(poi.offRoute)} fra ruta` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  /* Hytter er det man planlegger rundt: hvem som driver den, om den er åpen
+   * og om den koster noe. Det står i OpenStreetMap når noen har lagt det inn. */
+  const facts = [
+    poi.dnt ? el('span', { class: 'tag tag--dnt', text: '🏔️ DNT' }) : null,
+    poi.operator && !poi.dnt ? el('span', { class: 'tag', text: poi.operator }) : null,
+    poi.fee === 'no' ? el('span', { class: 'tag', text: 'Gratis' }) : null,
+    poi.fee === 'yes' ? el('span', { class: 'tag', text: 'Koster penger' }) : null,
+    poi.opening ? el('span', { class: 'tag', text: `Åpent: ${poi.opening}` }) : null,
+    poi.capacity ? el('span', { class: 'tag', text: `${poi.capacity} senger` }) : null,
+    poi.drinkable === false ? el('span', { class: 'tag tag--warn', text: 'Ikke drikkevann' }) : null,
+    poi.wheelchair
+      ? el('span', {
+          class: `access access--${poi.wheelchair}`,
+          title: 'Rullestoltilgang slik OpenStreetMap oppgir den',
+          text:
+            poi.wheelchair === 'ja'
+              ? '♿ Rullestolvennlig'
+              : poi.wheelchair === 'delvis'
+                ? '♿ Delvis tilgjengelig'
+                : '♿ Ikke tilrettelagt',
+        })
+      : null,
+  ].filter(Boolean);
+
+  return el('li', { class: 'poi-row' }, [
+    el('span', { class: 'poi-row__icon', 'aria-hidden': 'true', text: POI_KINDS[poi.kind].icon }),
+    el('span', { class: 'poi-row__body' }, [
+      el('button', {
+        class: 'linkish poi-row__name',
+        type: 'button',
+        text: poi.name,
+        title: 'Vis stedet i kartet',
+        onclick: () => handlers.onFocusPoi(poi),
+      }),
+      el('span', { class: 'poi-row__meta', text: meta }),
+      facts.length ? el('span', { class: 'poi-row__facts' }, facts) : null,
+      el('span', { class: 'poi-row__links' }, [
+        el('a', {
+          class: 'linkish linkish--small',
+          href: directionsUrl(poi),
+          target: '_blank',
+          rel: 'noopener',
+          text: '🧭 Veibeskrivelse',
+        }),
+        poi.website &&
+          el('a', {
+            class: 'linkish linkish--small',
+            href: poi.website,
+            target: '_blank',
+            rel: 'noopener',
+            text: 'Nettside',
+          }),
+        !poi.website &&
+          (poi.kind === 'hytte' || poi.kind === 'gapahuk') &&
+          el('a', {
+            class: 'linkish linkish--small',
+            href: `https://ut.no/sok?query=${encodeURIComponent(poi.name)}`,
+            target: '_blank',
+            rel: 'noopener',
+            text: 'Søk på ut.no',
+          }),
+      ]),
+    ]),
+  ]);
 }
 
 function waypointSection(trip, summary, handlers) {
@@ -1134,7 +1272,7 @@ export function renderJournal(savedTrips, handlers) {
       el('div', { class: 'empty' }, [
         el('p', { class: 'empty__big', text: '📖' }),
         el('p', { class: 'empty__title', text: 'Boka er tom – foreløpig' }),
-        el('p', { text: 'Når du har gått en tur, trykker du «Jeg gikk denne» nederst. Da samler den seg opp her, med kilometer, høydemeter og merker.' }),
+        el('p', { text: 'Når du har gått en tur, trykker du «Gikk den» nederst i turen. Da samler den seg opp her, med kilometer, høydemeter og merker.' }),
       ]),
     );
   }
@@ -1252,6 +1390,19 @@ export function renderJournal(savedTrips, handlers) {
 
 export function renderLayers(basemap, trailState, handlers) {
   return [
+    /* Egen topp med lukkeknapp. Håndtaket alene er ikke nok – man skal se
+     * hvordan man kommer ut igjen, ikke gjette. */
+    el('div', { class: 'popover__head' }, [
+      el('h2', { class: 'popover__heading', text: 'Kartlag' }),
+      el('button', {
+        class: 'icon-btn',
+        type: 'button',
+        title: 'Lukk kartlag',
+        'aria-label': 'Lukk kartlag',
+        html: '<span aria-hidden="true">✕</span>',
+        onclick: handlers.onCloseLayers,
+      }),
+    ]),
     el('h2', { class: 'popover__title', text: 'Bakgrunnskart' }),
     el('div', { class: 'radio-list', role: 'radiogroup', 'aria-label': 'Bakgrunnskart' },
       BASEMAPS.map((map) =>
@@ -1286,6 +1437,24 @@ export function renderLayers(basemap, trailState, handlers) {
 
 /* ---------- Bunnrad ---------- */
 
+/** Kildene, nederst i rullingen. */
+export function renderCredits() {
+  return [
+    'Kart og høyder: ',
+    el('a', { href: 'https://www.kartverket.no/', target: '_blank', rel: 'noopener', text: 'Kartverket' }),
+    ' · Ruter: Turrutebasen og ',
+    el('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener', text: 'OpenStreetMap' }),
+    ' · Vær: ',
+    el('a', { href: 'https://www.met.no/', target: '_blank', rel: 'noopener', text: 'MET' }),
+    ' · Skred: ',
+    el('a', { href: 'https://varsom.no/', target: '_blank', rel: 'noopener', text: 'Varsom' }),
+    ' · Kollektiv: ',
+    el('a', { href: 'https://entur.no/', target: '_blank', rel: 'noopener', text: 'Entur' }),
+    ' · Bilder: ',
+    el('a', { href: 'https://commons.wikimedia.org/', target: '_blank', rel: 'noopener', text: 'Wikimedia Commons' }),
+  ];
+}
+
 export function renderFooter(summary, navigation, handlers) {
   if (!summary) return [];
   return [
@@ -1296,16 +1465,6 @@ export function renderFooter(summary, navigation, handlers) {
       el('button', { class: 'btn', type: 'button', text: '✓ Gikk den', onclick: handlers.onLogTrip }),
       el('button', { class: 'btn', type: 'button', text: 'Lagre', onclick: handlers.onSave }),
       el('button', { class: 'btn', type: 'button', text: 'Del', onclick: handlers.onShare }),
-    ]),
-    el('p', { class: 'credits' }, [
-      'Kart og høyder: ',
-      el('a', { href: 'https://www.kartverket.no/', target: '_blank', rel: 'noopener', text: 'Kartverket' }),
-      ' · Ruter: Turrutebasen og ',
-      el('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener', text: 'OpenStreetMap' }),
-      ' · Vær: ',
-      el('a', { href: 'https://www.met.no/', target: '_blank', rel: 'noopener', text: 'MET' }),
-      ' · Skred: ',
-      el('a', { href: 'https://varsom.no/', target: '_blank', rel: 'noopener', text: 'Varsom' }),
     ]),
   ];
 }

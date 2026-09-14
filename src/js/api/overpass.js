@@ -40,6 +40,8 @@ function aroundList(points, maxVertices = 40) {
 export const POI_KINDS = {
   hytte: { label: 'Hytte', icon: '🛖' },
   gapahuk: { label: 'Gapahuk/bu', icon: '⛺' },
+  overnatting: { label: 'Overnatting', icon: '🛏️' },
+  teltplass: { label: 'Teltplass', icon: '🏕️' },
   topp: { label: 'Topp', icon: '⛰️' },
   utsikt: { label: 'Utsiktspunkt', icon: '🔭' },
   bading: { label: 'Badeplass', icon: '🏊' },
@@ -55,6 +57,11 @@ export const POI_KINDS = {
 function classify(tags = {}) {
   if (tags.tourism === 'alpine_hut' || tags.tourism === 'chalet') return 'hytte';
   if (tags.tourism === 'wilderness_hut' || tags.amenity === 'shelter') return 'gapahuk';
+  // Fjellstuer og turisthytter er ofte tagget som herberge eller hotell.
+  if (tags.tourism === 'hostel' || tags.tourism === 'guest_house' || tags.tourism === 'hotel') {
+    return 'overnatting';
+  }
+  if (tags.tourism === 'camp_site' || tags.tourism === 'caravan_site') return 'teltplass';
   if (tags.natural === 'peak') return 'topp';
   if (tags.tourism === 'viewpoint') return 'utsikt';
   if (tags.leisure === 'swimming_area' || tags.natural === 'beach' || tags.leisure === 'beach_resort') {
@@ -84,8 +91,8 @@ export function wheelchairAccess(tags = {}) {
 
 /** Overpass-uttrykk for alt vi kaller en fasilitet. */
 const FACILITY_QUERY = (area) => `
-  node["tourism"~"^(alpine_hut|wilderness_hut|chalet|viewpoint|picnic_site)$"](${area});
-  way["tourism"~"^(alpine_hut|wilderness_hut|chalet|picnic_site)$"](${area});
+  node["tourism"~"^(alpine_hut|wilderness_hut|chalet|hostel|guest_house|hotel|camp_site|caravan_site|viewpoint|picnic_site)$"](${area});
+  way["tourism"~"^(alpine_hut|wilderness_hut|chalet|hostel|guest_house|hotel|camp_site|caravan_site|picnic_site)$"](${area});
   node["amenity"~"^(shelter|drinking_water|toilets|bbq|parking)$"](${area});
   way["amenity"~"^(parking|toilets)$"](${area});
   node["leisure"~"^(firepit|picnic_table|swimming_area|playground|beach_resort)$"](${area});
@@ -118,6 +125,15 @@ function toPoi(element) {
     image: tags.image ?? null,
     commons: tags.wikimedia_commons ?? null,
     fee: tags.fee ?? null,
+    /** Åpningstider slik de står i OSM – ofte tomt, men gull når de finnes. */
+    opening: tags.opening_hours ?? null,
+    /** Antall senger på en hytte. */
+    capacity: tags.capacity ?? tags.beds ?? null,
+    /**
+     * `drinking_water=no` på en kran er verdt å si fra om. Mangler taggen,
+     * vet vi ikke, og da sier vi ingenting.
+     */
+    drinkable: tags.drinking_water === 'no' ? false : tags.drinking_water === 'yes' ? true : null,
     /** DNT-hytter har som regel operator som starter med «DNT». */
     dnt: /(^|\s)DNT(\s|$)|Turistforening/i.test(tags.operator ?? ''),
   };
@@ -125,9 +141,13 @@ function toPoi(element) {
 
 /**
  * Severdigheter og fasiliteter innenfor `radius` meter fra ruta.
+ *
+ * 700 meter dro med seg et helt boligfelt med lekeplasser når turen gikk i
+ * bymarka. 400 er nok til å få med det man faktisk passerer.
+ *
  * @param {Array<{lat:number,lon:number}>} route
  */
-export async function fetchPois(route, { radius = 700, signal } = {}) {
+export async function fetchPois(route, { radius = 400, signal } = {}) {
   if (route.length < 1) return [];
   const query = `[out:json][timeout:40];
 (${FACILITY_QUERY(`around:${radius},${aroundList(route)}`)});

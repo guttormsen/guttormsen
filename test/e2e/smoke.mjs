@@ -188,6 +188,23 @@ try {
   await page.click('.chip--toggle:has-text("Filtre")');
   await page.waitForSelector('.filters', { timeout: 5000 });
   check('filtrene er skjult til man ber om dem', true);
+
+  // Sidelengs rullende filterrader gjemte to tredeler av valgene.
+  const hiddenChips = await page.evaluate(() =>
+    [...document.querySelectorAll('.filters .chips')].reduce(
+      (most, row) => Math.max(most, row.scrollWidth - row.clientWidth),
+      0,
+    ),
+  );
+  check('ingen filtervalg ligger utenfor skjermkanten', hiddenChips <= 1, `${hiddenChips} px skjult`);
+
+  const groups = await page.locator('.filter-group__title').allTextContents();
+  check('filtrene er delt i navngitte grupper', groups.length >= 4, groups.join(' / '));
+
+  const smallestChip = await page.evaluate(() =>
+    Math.min(...[...document.querySelectorAll('.chip--toggle')].map((c) => Math.round(c.getBoundingClientRect().height))),
+  );
+  check('filterbrikkene er store nok å treffe', smallestChip >= 40, `minste ${smallestChip} px`);
   await page.click('.chip--toggle:has-text("Kort tur")');
   await page.waitForTimeout(300);
   const shortOnly = await page.evaluate(() =>
@@ -203,9 +220,38 @@ try {
   );
   check('flere filtre kombineres', loopsOnly);
 
-  await page.click('.linkish:has-text("Nullstill filtre")');
+  // Hopper lista til toppen for hvert filtertrykk, mister man plassen sin.
+  await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('.chip--toggle')].find((c) => /Merket/.test(c.textContent));
+    chip.scrollIntoView({ block: 'center' });
+  });
+  await page.waitForTimeout(250);
+  const scrollBefore = await page.evaluate(() => document.querySelector('.panes').scrollTop);
+  await page.click('.chip--toggle:has-text("Merket")');
+  await page.waitForTimeout(400);
+  const scrollAfter = await page.evaluate(() => document.querySelector('.panes').scrollTop);
+  check(
+    'lista blir stående når man trykker på et filter',
+    scrollBefore > 0 && Math.abs(scrollAfter - scrollBefore) <= 4,
+    `${scrollBefore} → ${scrollAfter}`,
+  );
+  await page.click('.chip--toggle:has-text("Merket")');
   await page.waitForTimeout(300);
+
+  await page.click('.btn:has-text("Nullstill")');
+  await page.waitForTimeout(400);
   check('filtrene kan nullstilles', (await page.locator('.card').count()) === cardCount);
+
+  // Slått sammen skal man se hvilke filtre som står på, og kunne skru dem av.
+  await page.click('.chip--toggle:has-text("Kort tur")');
+  await page.waitForTimeout(300);
+  await page.click('.filters__foot .btn');
+  await page.waitForTimeout(400);
+  const activeChips = await page.locator('.chips--active .chip').allTextContents();
+  check('aktive filtre vises når filterlista er lukket', activeChips.some((t) => /Kort tur/.test(t)), activeChips.join(' '));
+  await page.click('.chip--clear');
+  await page.waitForTimeout(400);
+  check('aktive filtre kan skrus av derfra', (await page.locator('.card').count()) === cardCount);
 
   /* Fasiliteter: bading, bål, buss til start, HC */
   await page
@@ -231,6 +277,11 @@ try {
   }
 
   if (Object.keys(tagged).length) {
+    // Filterlista ble lukket lenger opp; åpne den igjen før vi trykker i den.
+    if ((await page.locator('.filters').count()) === 0) {
+      await page.click('.chip--toggle:has-text("Filtre")');
+      await page.waitForSelector('.filters', { timeout: 5000 });
+    }
     const [feature] = Object.entries(tagged).sort((a, b) => b[1] - a[1])[0];
     await page.click(`.chip--toggle[title]:has-text("${
       { bading: 'Bading', bål: 'Bål og grill', rasteplass: 'Rasteplass', utsikt: 'Utsikt', hytte: 'Hytte', toalett: 'Toalett', lek: 'Lekeplass', kollektiv: 'Buss til start', hc: 'HC-fasiliteter' }[feature]
@@ -242,8 +293,10 @@ try {
     );
     const shown = await page.locator('.card').count();
     check('fasilitetsfilter virker', onlyMatching && shown > 0, `${shown} turer med ${feature}`);
-    await page.click('.linkish:has-text("Nullstill filtre")');
-    await page.waitForTimeout(300);
+    await page.click('.filters__foot .btn:has-text("Nullstill")');
+    await page.waitForTimeout(400);
+    await page.click('.filters__foot .btn');
+    await page.waitForTimeout(500);
   }
 
   /* Bilder fra Wikimedia Commons */
@@ -324,6 +377,14 @@ try {
   });
   check('høyder hentes fra Kartverket', summary.samples > 5, `${summary.samples} punkter`);
   check('tidsestimat beregnes', summary.seconds > 0, `${Math.round(summary.seconds / 60)} min`);
+  // Nøkkeltall i et eget fast felt delte turen i to felt som rullet hver for seg.
+  const scrollers = await page.evaluate(() =>
+    [...document.querySelectorAll('.panel *')]
+      .filter((n) => /auto|scroll/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 4)
+      .map((n) => `${n.tagName}.${n.className}`),
+  );
+  check('turen har én sammenhengende rulleflate', scrollers.length === 1, scrollers.join(' / ') || 'ingen');
+
   check('nøkkeltall vises', (await page.locator('.stat__value').count()) === 4);
   check('høydeprofilen tegnes', (await page.locator('.profile__seg').count()) > 3);
 
@@ -536,6 +597,62 @@ try {
   await mobile.click('#sheet-handle');
   await mobile.waitForTimeout(500);
   check('trykk på håndtaket slår arket sammen', (await mobile.evaluate(() => document.querySelector('#panel').dataset.sheet)) === 'peek');
+
+  /* Fanene ligger i dragflaten. Fanget arket pekeren med én gang, ble klikket
+     omadressert dit og fanene sluttet å virke med mus. */
+  await mobile.click('.tab[data-tab="dagbok"]');
+  await mobile.waitForTimeout(400);
+  check(
+    'fanene virker selv om de ligger i dragflaten',
+    (await mobile.evaluate(() => document.querySelector('.tab.is-active')?.dataset.tab)) === 'dagbok',
+  );
+  await mobile.click('.tab[data-tab="finn"]');
+  await mobile.waitForTimeout(400);
+
+  /* Tilbake: lagt til hjemskjerm er dette eneste veien ut av et lag. */
+  check('nettleseren har CloseWatcher eller historikk-reserve', await mobile.evaluate(() => 'CloseWatcher' in window || 'history' in window));
+
+  await mobile.click('.chip--toggle:has-text("Filtre")');
+  await mobile.waitForTimeout(500);
+  const stackWithFilters = await mobile.evaluate(() => window.lykkeligtur.closeStack.names);
+  check('åpne lag melder seg inn i tilbake-stabelen', stackWithFilters.includes('filtre'), stackWithFilters.join(' > '));
+
+  await mobile.keyboard.press('Escape');
+  await mobile.waitForTimeout(500);
+  check(
+    'tilbake lukker filtrene, ikke appen',
+    (await mobile.locator('.filters').count()) === 0 &&
+      (await mobile.evaluate(() => window.lykkeligtur.closeStack.names)).includes('ark'),
+  );
+
+  await mobile.keyboard.press('Escape');
+  await mobile.waitForTimeout(500);
+  check(
+    'neste tilbake slår sammen arket',
+    (await mobile.evaluate(() => document.querySelector('#panel').dataset.sheet)) === 'peek',
+  );
+
+  await mobile.keyboard.press('Escape');
+  await mobile.waitForTimeout(400);
+  check(
+    'tilbake gjør ingenting når alt er lukket',
+    (await mobile.evaluate(() => window.lykkeligtur.closeStack.depth)) === 0,
+  );
+
+  /* Kartlagsmenyen skal være et ark man kommer ut av. */
+  await mobile.click('#btn-layers');
+  await mobile.waitForTimeout(400);
+  const layerBox = await mobile.locator('#layer-popover').boundingBox();
+  const panelTop = await mobile.evaluate(() => document.querySelector('#panel').getBoundingClientRect().top);
+  check(
+    'kartlagsmenyen klippes ikke av bunnarket',
+    layerBox.y + layerBox.height > panelTop,
+    `menyen slutter ${Math.round(layerBox.y + layerBox.height)} px, arket starter ${Math.round(panelTop)} px`,
+  );
+  check('kartlagsmenyen har en lukkeknapp', (await mobile.locator('#layer-popover .popover__head button').count()) === 1);
+  await mobile.click('#layer-popover .popover__head button');
+  await mobile.waitForTimeout(400);
+  check('kartlagsmenyen lukkes med knappen', await mobile.locator('#layer-popover').isHidden());
 
   const tapTargets = await mobile.evaluate(() =>
     [...document.querySelectorAll('.tab, .map-btn, .pill, .btn')]

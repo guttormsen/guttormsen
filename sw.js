@@ -10,7 +10,7 @@
  * Bump denne når appen endres. Gamle lagre slettes da ved aktivering, slik at
  * ingen sitter igjen med en gammel utgave fra forrige besøk.
  */
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = `lykkeligtur-shell-${VERSION}`;
 const TILES = `lykkeligtur-tiles-${VERSION}`;
 const DATA = `lykkeligtur-data-${VERSION}`;
@@ -41,6 +41,7 @@ const SHELL_FILES = [
   'src/js/trailhit.js',
   'src/js/navigate.js',
   'src/js/sheet.js',
+  'src/js/closestack.js',
   'src/js/share.js',
   'src/js/gpx.js',
   'src/js/ui.js',

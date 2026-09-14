@@ -21,6 +21,7 @@ import { createProfile } from './profile.js';
 import { createSearch } from './search.js';
 import { createSnapper, SNAP_REASONS } from './snap.js';
 import { createSheet } from './sheet.js';
+import { createCloseStack } from './closestack.js';
 import { buildGpx, parseGpx, safeFilename } from './gpx.js';
 import { copyText, downloadText, toast } from './ui.js';
 import { DEFAULT_FILTERS, buildTrips, enrichTrip, filterTrips, sampleForCard, surpriseMe } from './trips.js';
@@ -60,6 +61,10 @@ let trailIndex = null;
 let hoveredTrail = null;
 
 /** Hvor mange piksler unna en sti et trykk kan lande. Fingre er upresise. */
+/** Hvor langt fra ruta en severdighet kan ligge og fortsatt telle som «langs ruta». */
+const MAX_OFF_ROUTE_M = 300;
+/** Flere enn dette gjør kartet uleselig. De nærmeste ruta vinner. */
+const MAX_POIS = 60;
 const TAP_TOLERANCE_PX = 16;
 const HOVER_TOLERANCE_PX = 12;
 
@@ -287,14 +292,17 @@ function showPreview(trip) {
   // fitRoute tar selv hensyn til hvor mye bunnarket dekker.
   view.fitRoute(trip.points);
   renderPreview();
+  openLayer('forhåndsvisning', () => {
+    S.state.preview = null;
+    previewRun++;
+    view.showSuggestion(null);
+    renderPreview();
+  });
   if (trip.ascent == null) loadPreviewElevation(trip);
 }
 
 function closePreview() {
-  S.state.preview = null;
-  previewRun++;
-  view.showSuggestion(null);
-  renderPreview();
+  closeLayer('forhåndsvisning');
 }
 
 /** Henter en grov høydeprofil for turen man ser på, så tid og stigning vises. */
@@ -321,6 +329,7 @@ function pickTrail(trip) {
   view.highlightTrail(null);
   view.showSuggestion(null);
   hoveredTrail = null;
+  forgetLayer('forhåndsvisning');
   S.state.preview = null;
   renderPreview();
   showTrailLabel(null);
@@ -476,6 +485,7 @@ async function recompute(reason) {
     S.state.summary = null;
     S.state.weather = null;
     S.state.pois = [];
+    S.state.poiError = false;
     S.state.avalanche = null;
     profile.update(null);
     renderAll();
@@ -555,17 +565,41 @@ function loadContext() {
 
   loadPhotosAndArticle(summary, id);
 
+  loadPois(summary, fresh);
+}
+
+/**
+ * Severdigheter og fasiliteter langs ruta.
+ *
+ * Skilt ut for seg selv fordi Overpass er en dugnadstjeneste som ofte er
+ * travel – da skal man kunne prøve igjen uten å laste hele turen på nytt.
+ */
+function loadPois(summary, fresh = () => true) {
+  S.state.loading.pois = true;
+  S.state.poiError = false;
+  renderPane('turen');
+
   fetchPois(summary.line)
     .then((pois) => {
       if (!fresh()) return;
       // Avstanden inn i turen regnes én gang her, ikke på nytt for hver tegning.
-      S.state.pois = pois.map((poi) => {
-        const hit = closestPointOnPath(poi, summary.line);
-        return { ...poi, along: summary.distances[hit.index], offRoute: hit.distance };
-      });
+      S.state.pois = pois
+        .map((poi) => {
+          const hit = closestPointOnPath(poi, summary.line);
+          return { ...poi, along: summary.distances[hit.index], offRoute: hit.distance };
+        })
+        // «Langs ruta» skal bety langs ruta. Et sted man må gå en kilometer
+        // for å nå hører ikke til turen.
+        .filter((poi) => poi.offRoute <= MAX_OFF_ROUTE_M)
+        .sort((a, b) => a.offRoute - b.offRoute)
+        .slice(0, MAX_POIS);
       view.drawPois(S.state.pois);
     })
-    .catch((error) => console.warn('Overpass feilet', error))
+    .catch((error) => {
+      console.warn('Overpass feilet', error);
+      // «Fant ingenting» og «fikk ikke spurt» er to helt ulike svar.
+      if (fresh()) S.state.poiError = true;
+    })
     .finally(() => {
       if (!fresh()) return;
       S.state.loading.pois = false;
@@ -805,9 +839,21 @@ const handlers = {
   onSearchHere: () => loadDiscovery(),
   onNearMe: () => findNearMe(),
   onToggleFilters: () => {
-    S.state.filtersOpen = !S.state.filtersOpen;
+    if (S.state.filtersOpen) {
+      closeLayer('filtre');
+      return;
+    }
+    S.state.filtersOpen = true;
     renderPane('finn');
-    if (S.state.filtersOpen) openSheet(true);
+    // Filtrene skal ses i sin helhet, ikke gjennom en glippe.
+    if (isSheet()) sheet.go('full');
+    $('.panes').scrollTop = 0;
+    openLayer('filtre', () => {
+      S.state.filtersOpen = false;
+      renderPane('finn');
+      // Ferdig med å filtrere: kartet fram igjen, med treffene under.
+      if (isSheet()) sheet.go('half');
+    });
   },
   onToggleLength: (id) => {
     const list = S.state.filters.lengths;
@@ -866,6 +912,7 @@ const handlers = {
     setDrawing(true);
   },
   onGoDiscover: () => selectTab('finn'),
+  onCloseLayers: () => closeLayer('kartlag'),
 
   /* Turen */
   onName: (name) => S.setName(name),
@@ -876,6 +923,9 @@ const handlers = {
   onRemoveWaypoint: (id) => S.removeWaypoint(id),
   onFocusWaypoint: (waypoint) => view.flyTo(waypoint, 14),
   onFocusPoi: (poi) => view.flyTo(poi, 15),
+  onRetryPois: () => {
+    if (S.state.summary) loadPois(S.state.summary);
+  },
   onToggleCheck: (index, value) => {
     checklist[index] = value;
     persistPrefs();
@@ -975,6 +1025,7 @@ const PANES = {
         sun: S.state.sun,
         avalanche: S.state.avalanche,
         pois: S.state.pois,
+        poiError: S.state.poiError,
         photos: S.state.photos,
         article: S.state.article,
         loading: S.state.loading,
@@ -991,7 +1042,12 @@ function renderPane(name) {
   const node = $(`#pane-${name}`);
   // Skjulte faner tegnes først når de vises – sparer arbeid ved hvert tastetrykk.
   if (!node || name !== activeTab) return;
+  // Innholdet byttes helt ut. Uten dette hopper lista til toppen hver gang man
+  // trykker på et filter, og man mister plassen sin.
+  const scroller = $('.panes');
+  const top = scroller.scrollTop;
   render(node, PANES[name]().flat().filter(Boolean));
+  if (top && scroller.scrollTop !== top) scroller.scrollTop = top;
 }
 
 function renderStats() {
@@ -1015,7 +1071,8 @@ function renderNavBar() {
 
 function renderAll() {
   const hasRoute = Boolean(S.state.summary);
-  $('#route-header').hidden = !hasRoute || activeTab === 'dagbok';
+  // Nøkkeltallene hører til turen. På turforslag er de bare i veien.
+  $('#route-header').hidden = !hasRoute || activeTab !== 'turen';
   $('#panel-footer').hidden = !hasRoute;
 
   if (hasRoute) renderStats();
@@ -1031,7 +1088,12 @@ function renderAll() {
   updateSearchHere();
 }
 
+render($('#panel-credits'), panels.renderCredits());
+
 function selectTab(name, { open = false } = {}) {
+  // Å bla seg tilbake til turforslagene er den vanligste veien tilbake.
+  if (name === 'finn') forgetLayer('fane');
+  else if (name !== activeTab) openLayer('fane', () => selectTab('finn'));
   activeTab = name;
   for (const button of document.querySelectorAll('.tab')) {
     const selected = button.dataset.tab === name;
@@ -1050,6 +1112,48 @@ function selectTab(name, { open = false } = {}) {
 for (const button of document.querySelectorAll('.tab')) {
   // Trykker man selv på en fane, vil man se innholdet – da åpnes arket.
   button.addEventListener('click', () => selectTab(button.dataset.tab, { open: true }));
+}
+
+/* ---------- Tilbake: ett lag om gangen ---------- */
+
+/*
+ * Lagt til hjemskjerm er tilbakeknappen den eneste veien ut av et lag. Alt som
+ * legger seg over kartet melder seg inn her, så et tilbaketrykk lukker det
+ * øverste i stedet for hele appen.
+ */
+const closeStack = createCloseStack();
+/** Navn på åpne lag → hvordan de lukkes og meldes ut. */
+const openLayers = new Map();
+
+/**
+ * Melder inn et lag som nettopp ble åpnet. `close` kjøres én gang, uansett om
+ * det er tilbakeknappen, Escape eller appen selv som lukker laget.
+ */
+function openLayer(name, close) {
+  forgetLayer(name);
+  const dismiss = closeStack.push(name, () => {
+    // Stabelen lukker: meld ut først, så vi ikke lukker i ring.
+    openLayers.delete(name);
+    close();
+  });
+  openLayers.set(name, { dismiss, close });
+}
+
+/** Lukker laget nå – samme vei som tilbakeknappen ville gått. */
+function closeLayer(name) {
+  const layer = openLayers.get(name);
+  if (!layer) return;
+  openLayers.delete(name);
+  layer.dismiss();
+  layer.close();
+}
+
+/** Melder ut et lag som allerede er borte, uten å lukke det en gang til. */
+function forgetLayer(name) {
+  const layer = openLayers.get(name);
+  if (!layer) return;
+  openLayers.delete(name);
+  layer.dismiss();
 }
 
 /* ---------- Bunnark ---------- */
@@ -1078,8 +1182,21 @@ const sheet = createSheet(panel, $('#sheet-grab'), {
   isActive: isSheet,
   onChange: (state) => {
     sheetHandle.setAttribute('aria-expanded', String(state !== 'peek'));
+    // Et oppslått ark er også et lag: tilbake skal slå det sammen, ikke
+    // lukke appen.
+    if (state === 'peek') forgetLayer('ark');
+    else openLayer('ark', () => sheet.go('peek'));
     setTimeout(() => view.invalidate(), 280);
   },
+});
+
+/*
+ * Håndtaket er en knapp, og knapper i dragflaten får stå i fred for
+ * trykk-for-å-åpne. Denne skal gjøre nettopp det, så den gjør det selv.
+ */
+sheetHandle.addEventListener('click', () => {
+  if (!isSheet()) return;
+  sheet.go(sheet.state === 'peek' ? 'half' : 'peek');
 });
 
 /** Åpner arket minst så mye – brukes når noe nytt skal leses. */
@@ -1098,17 +1215,30 @@ function renderLayerPopover() {
   render(layerPopover, panels.renderLayers(basemap, trailState, handlers).flat().filter(Boolean));
 }
 
+function closeLayerPopover({ focus = false } = {}) {
+  if (layerPopover.hidden) return;
+  layerPopover.hidden = true;
+  layerButton.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('has-overlay');
+  if (focus) layerButton.focus();
+}
+
+function openLayerPopover() {
+  layerPopover.hidden = false;
+  layerButton.setAttribute('aria-expanded', 'true');
+  document.body.classList.add('has-overlay');
+  renderLayerPopover();
+  openLayer('kartlag', () => closeLayerPopover({ focus: true }));
+}
+
 layerButton.addEventListener('click', () => {
-  const open = layerPopover.hidden;
-  layerPopover.hidden = !open;
-  layerButton.setAttribute('aria-expanded', String(open));
-  if (open) renderLayerPopover();
+  if (layerPopover.hidden) openLayerPopover();
+  else closeLayer('kartlag');
 });
 document.addEventListener('click', (event) => {
   if (layerPopover.hidden) return;
   if (layerPopover.contains(event.target) || layerButton.contains(event.target)) return;
-  layerPopover.hidden = true;
-  layerButton.setAttribute('aria-expanded', 'false');
+  closeLayer('kartlag');
 });
 
 /* ---------- Verktøy på kartet ---------- */
@@ -1301,12 +1431,10 @@ function persistPrefs() {
 /* ---------- Tastatursnarveier ---------- */
 
 document.addEventListener('keydown', (event) => {
-  // Escape lukker kartlagsvinduet uansett hvor fokus står – også når det står
-  // i en av radioknappene inni vinduet.
-  if (event.key === 'Escape' && !layerPopover.hidden) {
-    layerPopover.hidden = true;
-    layerButton.setAttribute('aria-expanded', 'false');
-    layerButton.focus();
+  // Escape lukker det øverste laget uansett hvor fokus står – også inne i
+  // kartlagsvinduet. Har nettleseren CloseWatcher, gjør den dette selv.
+  if (event.key === 'Escape' && !closeStack.usesWatcher && closeStack.depth) {
+    closeStack.pop();
     return;
   }
   if (event.target.matches('input, textarea, select')) return;
@@ -1371,4 +1499,4 @@ const clean = (object) =>
 boot();
 
 // Praktisk for feilsøking i konsollen; ikke noe appen selv er avhengig av.
-window.lykkeligtur = { state: S.state, view, sheet, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };
+window.lykkeligtur = { state: S.state, view, sheet, closeStack, loadDiscovery, selectTab, startNavigation, stopNavigation, updateNavigation };

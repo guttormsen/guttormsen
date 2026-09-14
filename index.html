@@ -111,17 +111,25 @@
           </nav>
         </div>
 
-        <div id="route-header" class="route-header" hidden>
-          <section class="stats" id="stats" aria-live="polite"></section>
-          <section class="profile" aria-label="Høydeprofil">
-            <div id="profile" class="profile__box"></div>
-          </section>
-        </div>
-
         <div class="panes">
+          <!--
+            Nøkkeltallene og høydeprofilen ligger inne i rulleflaten. Sto de
+            utenfor, ble turen delt i to felt som rullet hver for seg.
+          -->
+          <div id="route-header" class="route-header" hidden>
+            <section class="stats" id="stats" aria-live="polite"></section>
+            <section class="profile" aria-label="Høydeprofil">
+              <div id="profile" class="profile__box"></div>
+            </section>
+          </div>
+
           <div class="pane" id="pane-finn" data-pane="finn"></div>
           <div class="pane" id="pane-turen" data-pane="turen" hidden></div>
           <div class="pane" id="pane-dagbok" data-pane="dagbok" hidden></div>
+
+          <!-- Kildehenvisningen hører hjemme nederst i rullingen, ikke i den
+               faste knapperaden der den stjal plass fra knappene. -->
+          <p class="credits" id="panel-credits"></p>
         </div>
 
         <footer id="panel-footer" class="panel__footer" hidden></footer>
