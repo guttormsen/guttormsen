@@ -839,6 +839,19 @@ function updateSearchHere() {
   button.textContent = discovery.searched ? '🔍 Søk i dette området' : '🔍 Finn turer her';
 }
 
+/* ---------- Uten nett ---------- */
+
+/*
+ * På fjellet forsvinner dekningen. Da skal appen si fra at det er derfor
+ * kartet er tomt og turforslagene uteblir – ikke bare stå der og se ødelagt ut.
+ */
+function showNetworkState() {
+  $('#offline-note').hidden = navigator.onLine !== false;
+}
+window.addEventListener('online', showNetworkState);
+window.addEventListener('offline', showNetworkState);
+showNetworkState();
+
 /* ---------- Første gang ---------- */
 
 const introKey = `${APP.storageKey}.sett-intro`;

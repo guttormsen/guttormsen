@@ -408,6 +408,34 @@ button {
   margin-top: 0;
 }
 
+/* Sier fra når nettet er borte, så et tomt kart ikke ser ødelagt ut. */
+.offline-note {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 760;
+  max-width: calc(100% - 140px);
+  padding: 7px 13px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--warn-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  transform: translateX(-50%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .offline-note {
+    color: var(--ink);
+  }
+}
+
 /* Navnet på stien under pekeren. */
 .trail-label {
   position: absolute;

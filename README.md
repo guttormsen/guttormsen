@@ -158,6 +158,10 @@ mellomlageret som service workeren bruker.
 - Dekker ruta et så stort område at det ville blitt over 900 kartruter, sier
   appen fra i stedet for å be om alt.
 
+Er nettet borte, sier appen fra øverst i kartet i stedet for bare å vise en
+tom flate. Selve appen starter uansett – skallet ligger i service workeren, og
+røyktesten kutter nettet og sjekker at den gjør det.
+
 Flislageret er med vilje **ikke** versjonert. Har du lastet ned kartet for en
 tur, skal det ikke forsvinne fordi appen fikk en oppdatering kvelden før.
 
@@ -335,7 +339,7 @@ src/js/
   util.js               formatering på norsk, småting
   api/                  én modul per tjeneste, alle over samme HTTP-lag
 test/                   186 enhetstester
-test/e2e/smoke.mjs      røyktest i Chromium, 86 sjekker mot ekte tjenester
+test/e2e/smoke.mjs      røyktest i Chromium, 92 sjekker mot ekte tjenester
 scripts/skjermbilder.mjs bilder av hver skjerm på telefonstørrelse
 ```
 

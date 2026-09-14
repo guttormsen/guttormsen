@@ -783,6 +783,46 @@ try {
   await darkPage.screenshot({ path: join(SHOTS, 'morkt.png') });
   await dark.close();
 
+  /*
+   * Uten nett. Hele poenget med appen på hjemskjermen er at den starter der
+   * dekningen tar slutt. Her slås service workeren på – den er avslått i
+   * resten av testen fordi Playwright ikke kan omdirigere trafikken dens.
+   */
+  const offlineContext = await browser.newContext({ locale: 'nb-NO', viewport: { width: 390, height: 780 } });
+  const offlinePage = await offlineContext.newPage();
+  // Ingen omdirigering: alt utenfor testserveren feiler, akkurat som i fjellet.
+  await offlinePage.goto(base, { waitUntil: 'domcontentloaded' });
+  const registered = await offlinePage
+    .waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active != null, null, {
+      timeout: 20000,
+    })
+    .then(() => true)
+    .catch(() => false);
+  check('service workeren tar over', registered);
+
+  if (registered) {
+    // Skallet må rekke å bli mellomlagret før vi kutter nettet.
+    await offlinePage.waitForTimeout(3000);
+    await offlineContext.setOffline(true);
+    await offlinePage.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+    const bootedOffline = await offlinePage
+      .waitForFunction(() => Boolean(window.lykkeligtur), null, { timeout: 20000 })
+      .then(() => true)
+      .catch(() => false);
+    check('appen starter uten nett', bootedOffline);
+    if (bootedOffline) {
+      check('fanene er på plass uten nett', (await offlinePage.locator('.tab').count()) === 3);
+      // Et tomt kart uten forklaring ser ødelagt ut.
+      check('appen sier fra at nettet er borte', await offlinePage.locator('#offline-note').isVisible());
+      await offlinePage.screenshot({ path: join(SHOTS, 'uten-nett.png') });
+      await offlineContext.setOffline(false);
+      await offlinePage.waitForTimeout(600);
+      check('meldingen forsvinner når nettet er tilbake', await offlinePage.locator('#offline-note').isHidden());
+    }
+    await offlineContext.setOffline(false);
+  }
+  await offlineContext.close();
+
   check('ingen JavaScript-feil i konsollen', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (error) {
   check('testen kjørte ferdig', false, String(error).split('\n')[0]);
