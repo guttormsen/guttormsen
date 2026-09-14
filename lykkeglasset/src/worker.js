@@ -16,7 +16,7 @@ import {
 } from './dato.js';
 import {
   BEHOV, SVAR, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske,
-  erAktiv, morgenPuff, ukesbrev, arsbok,
+  erAktiv, morgenPuff, ukesbrev, arsbok, dagsrapport, onskeliste, statuslinje,
 } from './varsler.js';
 import { sendTelegram, kvitterTrykk, byttUtKnapper } from './telegram.js';
 
@@ -321,7 +321,7 @@ async function lagreDag(kropp, env, ctx) {
 }
 
 /** Én tilfeldig god ting fra før i tiden. Helst noe hun har rukket å glemme. */
-async function glasset(env) {
+async function trekkLapp(env) {
   const dato = idag(env);
   const grense = sisteDager(dato, 15).at(-1);
   const gamle = await env.DB
@@ -342,10 +342,10 @@ async function glasset(env) {
       }
     } catch { /* en ødelagt rad skal ikke stoppe resten */ }
   }
-  if (!lapper.length) return json({ tom: true });
+  if (!lapper.length) return { tom: true };
 
   const valgt = lapper[Math.floor(Math.random() * lapper.length)];
-  return json({ ...valgt, når: norskDato(valgt.dato, true) });
+  return { ...valgt, når: norskDato(valgt.dato, true) };
 }
 
 /** Alt hun har skrevet, søkbart. Han ser bare det hun har delt. */
@@ -371,9 +371,23 @@ async function arkiv(env, hvem, url) {
 /* ---------- Telegram inn ---------- */
 
 const KOMMANDOER = [
-  '/logginn – engangslenke rett inn i appen',
+  '🫙 Lykkeglasset',
+  '',
+  '/idag – dagen hennes så langt',
+  '/uke – uka samlet',
+  '/status – hvor ting står',
+  '/glasset – trekk en lapp fra glasset',
+  '',
   '/si <tekst> – send en melding til Lykke',
+  '/brev <tekst> – legg inn et brev til en dårlig dag',
+  '/onske <tekst> – legg til på ønskelista',
+  '/onsker – vis ønskelista',
+  '',
+  '/logginn – engangslenke rett inn i appen',
+  '/kode <ny kode> – sett ny kode for Lykke',
   '/hjelp – denne lista',
+  '',
+  'Du kan også svare på en melding fra meg, så går den rett til henne.',
 ].join('\n');
 
 const svarTil = (env, ctx, chat, tekst) => {
@@ -447,12 +461,98 @@ async function fraTelegram(req, env, ctx, origin) {
     return json({ ok: true });
   }
 
+  /** Teksten etter kommandoordet, eller tom streng. */
+  const etter = (kommando) => (tekst.startsWith(`${kommando} `) ? tekst.slice(kommando.length + 1).trim() : '');
+
   if (tekst.startsWith('/si ')) {
-    const sagt = tekst.slice(4).trim().slice(0, 2000);
+    const sagt = etter('/si').slice(0, 2000);
     if (sagt) {
       await leggMelding(env, MATHIAS, sagt);
       svarTil(env, ctx, chat, '✓ Sendt til Lykke.');
     }
+    return json({ ok: true });
+  }
+
+  if (tekst === '/idag') {
+    const dato = idag(env);
+    svarTil(env, ctx, chat, dagsrapport(forHam(await hentDag(env, dato), erDelt(env)), 'i dag'));
+    return json({ ok: true });
+  }
+
+  if (tekst === '/uke') {
+    const dato = idag(env);
+    const rader = await env.DB
+      .prepare('SELECT * FROM dager WHERE dato >= ?1 ORDER BY dato DESC')
+      .bind(sisteDager(dato, 14).at(-1)).all();
+    const dager = (rader.results ?? []).map(radTilDag);
+    const uke = ukesbilde(dager, dato);
+    const gode = dager
+      .filter((d) => !d.privat && dagerMellom(d.dato, dato) < 7)
+      .reduce((n, d) => n + d.gode_ting.length, 0);
+    svarTil(env, ctx, chat, uke.ført ? ukesbrev(uke, gode) : '🫙 Ingen dager ført denne uka ennå.');
+    return json({ ok: true });
+  }
+
+  if (tekst === '/status') {
+    const [sist, sistAktiv, uleste, brev, onsker] = await Promise.all([
+      env.DB.prepare('SELECT dato FROM dager ORDER BY dato DESC LIMIT 1').first(),
+      env.DB.prepare("SELECT sendt_kl FROM varsler WHERE slag = 'aktiv' ORDER BY sendt_kl DESC LIMIT 1").first(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM meldinger WHERE fra = 'mathias' AND lest_kl IS NULL").first(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM brev WHERE apnet_kl IS NULL').first(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM onsker WHERE gjort_kl IS NULL').first(),
+    ]);
+    svarTil(env, ctx, chat, statuslinje({
+      sist: sist ? norskDato(sist.dato, true) : null,
+      sistAktiv: sistAktiv ? norskDato(sistAktiv.sendt_kl.slice(0, 10), true) : null,
+      uleste: uleste?.n ?? 0,
+      brev: brev?.n ?? 0,
+      onsker: onsker?.n ?? 0,
+    }));
+    return json({ ok: true });
+  }
+
+  if (tekst === '/glasset') {
+    const lapp = await trekkLapp(env);
+    svarTil(env, ctx, chat, lapp.tom
+      ? '🫙 Glasset er tomt ennå. Det fyller seg opp.'
+      : `🫙 «${lapp.tekst}»\n\n${lapp.når}`);
+    return json({ ok: true });
+  }
+
+  if (tekst === '/onsker') {
+    const rader = await env.DB.prepare('SELECT * FROM onsker ORDER BY gjort_kl IS NOT NULL, id DESC').all();
+    svarTil(env, ctx, chat, onskeliste(rader.results ?? []));
+    return json({ ok: true });
+  }
+
+  if (tekst.startsWith('/onske ')) {
+    const ønsket = etter('/onske').slice(0, 200);
+    if (ønsket) {
+      await env.DB.prepare('INSERT INTO onsker (tekst, laget_av, laget_kl) VALUES (?1, ?2, ?3)')
+        .bind(ønsket, MATHIAS, nå()).run();
+      svarTil(env, ctx, chat, `✓ Lagt til: ${ønsket}`);
+    }
+    return json({ ok: true });
+  }
+
+  if (tekst.startsWith('/brev ')) {
+    const brevet = etter('/brev').slice(0, 4000);
+    if (brevet) {
+      await env.DB.prepare('INSERT INTO brev (tekst, laget_kl) VALUES (?1, ?2)').bind(brevet, nå()).run();
+      svarTil(env, ctx, chat, '✓ Lagt i glasset. Hun får tilbud om det når dagen er tung.');
+    }
+    return json({ ok: true });
+  }
+
+  if (tekst.startsWith('/kode ')) {
+    const ny = etter('/kode');
+    if (ny.length < 6) {
+      svarTil(env, ctx, chat, 'Koden må være minst seks tegn.');
+      return json({ ok: true });
+    }
+    await skrivOppsett(env, `kode_${LYKKE}`, await lagKode(ny));
+    await leggMelding(env, MATHIAS, 'Jeg satte en ny kode for deg her i appen.');
+    svarTil(env, ctx, chat, `✓ Ny kode satt for Lykke. Hun har fått en melding om det.`);
     return json({ ok: true });
   }
 
@@ -543,7 +643,7 @@ async function api(req, env, url, ctx) {
     }
     return json(erLykke ? await tilstandLykke(env) : await tilstandMathias(env));
   }
-  if (sti === '/glasset') return glasset(env);
+  if (sti === '/glasset') return json(await trekkLapp(env));
   if (sti === '/arkiv') return arkiv(env, hvem, url);
 
   /**

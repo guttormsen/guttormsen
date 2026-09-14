@@ -32,7 +32,7 @@ PAMINNELSE = "ja"
 # Normalt velger Lykke selv om dagen deles. Settes denne til "ja", finnes ikke
 # valget: alt deles, og appen sier det rett ut i stedet for å tilby en knapp
 # den ikke følger.
-DELT_MODUS = "nei"
+DELT_MODUS = "ja"
 # Si fra på Telegram når hun er inne i appen. Høyst én gang i timen.
 AKTIV_VARSEL = "ja"
 # Morgenen etter en tung kveld kommer beskjeden på nytt, når den kan brukes.

@@ -766,3 +766,117 @@ test('koden ligger ikke i klartekst i databasen', async () => {
   assert.ok(rad.verdi.startsWith('pbkdf2$'));
   assert.ok(!rad.verdi.includes('hemmelig-kode'));
 });
+
+/* ---------- botens kommandoer ---------- */
+
+const sisteSvar = () => sendte.at(-1)?.text ?? '';
+
+test('/hjelp viser hva boten kan', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/hjelp');
+  for (const k of ['/idag', '/uke', '/status', '/glasset', '/si', '/brev', '/onske', '/logginn', '/kode']) {
+    assert.ok(sisteSvar().includes(k), `mangler ${k}`);
+  }
+});
+
+test('/idag forteller om dagen, og respekterer at den er privat', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  const cookie = await loggInn('lykke');
+
+  sendte.length = 0;
+  await fraEier('/idag');
+  assert.ok(sisteSvar().includes('Ingenting ført'));
+
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { humor: 4, behov: 'klem', gode_ting: [{ tekst: 'bålkaffe' }] },
+  });
+  sendte.length = 0;
+  await fraEier('/idag');
+  assert.ok(sisteSvar().includes('bålkaffe'));
+  assert.ok(sisteSvar().includes('en klem'));
+
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'bålkaffe' }], privat: true } });
+  sendte.length = 0;
+  await fraEier('/idag');
+  assert.ok(sisteSvar().includes('holdt for seg selv'));
+  assert.ok(!sisteSvar().includes('bålkaffe'), 'en privat dag skal ikke lekke gjennom boten');
+});
+
+test('/uke svarer også når det ikke er ført noe', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/uke');
+  assert.ok(sisteSvar().includes('Ingen dager ført'));
+});
+
+test('/onske legger til, /onsker viser lista', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/onsker');
+  assert.ok(sisteSvar().includes('tom'));
+
+  await fraEier('/onske Bade i Nordsjøen');
+  await fraEier('/onsker');
+  assert.ok(sisteSvar().includes('Bade i Nordsjøen'));
+
+  const cookie = await loggInn('lykke');
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.onsker[0].laget_av, 'mathias');
+});
+
+test('/brev legger et brev i glasset', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await fraEier('/brev Det går over.');
+
+  const cookie = await loggInn('lykke');
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.brev.length, 1);
+  const åpnet = await (await kall(`/brev/${t.brev[0].id}/apne`, { metode: 'POST', cookie })).json();
+  assert.equal(åpnet.tekst, 'Det går over.');
+});
+
+test('/kode setter ny kode for henne, og hun får vite det', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/kode kort');
+  assert.ok(sisteSvar().includes('minst seks'));
+
+  await fraEier('/kode helt-ny-kode');
+  const inn = await kall('/logg-inn', { metode: 'POST', kropp: { hvem: 'lykke', kode: 'helt-ny-kode' } });
+  assert.equal(inn.status, 200);
+
+  const cookie = inn.headers.get('Set-Cookie').split(';')[0];
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.ok(t.meldinger.some((m) => m.tekst.includes('ny kode')));
+});
+
+test('/status sier hvor ting står', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await fraEier('/brev noe');
+  sendte.length = 0;
+  await fraEier('/status');
+  assert.ok(sisteSvar().includes('Brev som ligger klare: 1'));
+  assert.ok(sisteSvar().includes('Sist ført: aldri'));
+});
+
+test('kommandoene virker ikke for andre enn eieren', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await oppdatering({
+    message: { from: { id: 777 }, chat: { id: -1, type: 'group' }, text: '/kode jeg-tar-over' },
+  });
+  assert.deepEqual(sendte, []);
+  assert.equal((await kall('/logg-inn', {
+    metode: 'POST', kropp: { hvem: 'lykke', kode: 'jeg-tar-over' },
+  })).status, 401);
+});

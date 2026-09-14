@@ -349,6 +349,10 @@ function kveldsrunden(t, ferdig) {
     ramme('Hva trenger du?', 'Velg én, eller ingen.', [
       el('div', { class: 'brikker' }, brikker),
       bryter,
+      t.delt && el('p', {
+        class: 'liten svak', style: 'margin:1.3rem 0 0',
+        text: 'Denne appen står i delt modus: alt du fører her, ser Mathias.',
+      }),
       el('h3', { style: 'margin-top:1.4rem', text: 'Dette ser Mathias' }),
       forhåndsvisning(utkast, t.behov),
     ], { videre: 'Lagre dagen', siste: true });
@@ -504,6 +508,10 @@ function faneIdag(t) {
           el('div', {}, [
             el('h2', { text: 'Kveldsrunden' }),
             el('p', { class: 'svak liten', style: 'margin:0', text: 'Tre gode ting, og hvordan dagen var. Under ett minutt.' }),
+            t.delt && el('p', {
+              class: 'liten svak', style: 'margin:.5rem 0 0',
+              text: 'Delt modus: alt du fører her, ser Mathias.',
+            }),
           ]),
         ]),
         el('button', {

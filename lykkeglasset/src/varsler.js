@@ -207,6 +207,52 @@ export function ukesbrev(uke, godeTing) {
   return linjer.join('\n');
 }
 
+/* ---------- svar på spørsmål fra Telegram ---------- */
+
+/** Dagen hennes, slik den spørres etter. */
+export function dagsrapport(dag, dato) {
+  if (!dag) return `🫙 Ingenting ført ${dato} ennå.`;
+  if (dag.privat) return `🔒 Dagen er ført, men holdt for seg selv.`;
+
+  const linjer = [`${dag.humor} av 5 – ${HUMOR[dag.humor]}`];
+  if (dag.behov) linjer.push(`Hun trenger: ${BEHOV[dag.behov].etikett.toLowerCase()}`);
+  if (dag.gode_ting?.length) {
+    linjer.push('', 'Tre gode ting:');
+    for (const g of dag.gode_ting) linjer.push(`  • ${g.tekst}`);
+  }
+  if (dag.holdt_gode) linjer.push('', 'De gode tingene beholdt hun for seg selv.');
+  if (dag.tungt) linjer.push('', `Hun skrev: «${dag.tungt}»`);
+  if (dag.holdt_tungt) linjer.push('', 'Noe var tungt. Det er ikke delt.');
+  return linjer.join('\n');
+}
+
+/** Ønskelista, med de gjorte nederst. */
+export function onskeliste(onsker) {
+  if (!onsker.length) return '✨ Ønskelista er tom. Legg til med «/onske <noe dere skal gjøre>».';
+  const igjen = onsker.filter((o) => !o.gjort_kl);
+  const gjort = onsker.filter((o) => o.gjort_kl);
+  const linjer = [`✨ Ønskelista – ${igjen.length} igjen`, ''];
+  for (const o of igjen) linjer.push(`  ○ ${o.tekst}`);
+  if (gjort.length) {
+    linjer.push('', 'Gjort:');
+    for (const o of gjort) linjer.push(`  ✓ ${o.tekst}`);
+  }
+  return linjer.join('\n');
+}
+
+/** Hvor ting står akkurat nå. */
+export function statuslinje({ sist, sistAktiv, uleste, brev, onsker }) {
+  return [
+    '🫙 Status',
+    '',
+    `Sist ført: ${sist ?? 'aldri'}`,
+    `Sist inne i appen: ${sistAktiv ?? 'ukjent'}`,
+    `Uleste meldinger til henne: ${uleste}`,
+    `Brev som ligger klare: ${brev}`,
+    `Ønsker igjen: ${onsker}`,
+  ].join('\n');
+}
+
 /** Siste kvelden i året. Den eneste meldingen som blir bedre for hvert år. */
 export function arsbok(ar, antall, dager) {
   return [
