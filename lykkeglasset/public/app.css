@@ -679,6 +679,42 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   to { opacity: 1; transform: none; }
 }
 
+/* Reaksjoner henger under bobla, halvveis utenfor, slik man er vant til. */
+.boble { position: relative; }
+.boble .reaksjoner {
+  position: absolute;
+  bottom: -11px;
+  display: flex;
+  gap: 2px;
+  background: var(--flate);
+  border: 1px solid var(--kant);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.boble[data-min="ja"] .reaksjoner { right: 10px; }
+.boble[data-min="nei"] .reaksjoner { left: 10px; }
+
+/* `display: flex` slår nettleserens egen regel for [hidden]. Uten denne blir
+   alle velgerne stående åpne samtidig. */
+.velgreaksjon[hidden] { display: none; }
+
+.velgreaksjon {
+  display: flex;
+  gap: .25rem;
+  align-self: center;
+  margin: .2rem 0 .5rem;
+  animation: popp .25s var(--sprett);
+}
+.velgreaksjon button {
+  min-height: 40px;
+  width: 44px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.2rem;
+}
+
 .skrivefelt { display: flex; gap: .5rem; align-items: flex-end; }
 .skrivefelt textarea { min-height: 48px; max-height: 8rem; }
 .skrivefelt button { flex: none; width: 48px; min-height: 48px; padding: 0; border-radius: 14px; }

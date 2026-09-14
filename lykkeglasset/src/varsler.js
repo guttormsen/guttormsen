@@ -207,6 +207,59 @@ export function ukesbrev(uke, godeTing) {
   return linjer.join('\n');
 }
 
+/* ---------- kveldens spørsmål ---------- */
+
+/**
+ * Spørsmålet som kommer i tillegg til de tre gode tingene.
+ *
+ * Et skjema som ser likt ut 365 kvelder på rad blir et skjema. Dette veksler,
+ * og det samme spørsmålet kommer igjen først om et par måneder.
+ */
+export const SPORSMAL = [
+  'Hva lo du av i dag?',
+  'Hvem tenkte du på?',
+  'Hva var det første du kjente da du våknet?',
+  'Hva gledet du deg til?',
+  'Hva sa du ja til i dag?',
+  'Hva sa du nei til?',
+  'Hvor var du da du pustet ut?',
+  'Hva smakte best?',
+  'Hva hørte du som du likte?',
+  'Hva ville du gjort om igjen?',
+  'Hvem burde fått vite at du satte pris på dem?',
+  'Hva slags vær var det inni deg?',
+  'Hva tok lengst tid i dag?',
+  'Hva var du stolt av?',
+  'Hva trengte du mer av?',
+  'Hva sa du til deg selv i dag?',
+  'Hvor lenge var du ute?',
+  'Hva holdt du på med da du glemte tida?',
+  'Hva var rart i dag?',
+  'Hva vil du huske fra i dag om ti år?',
+];
+
+/** Samme dag gir samme spørsmål, for begge to, uansett når de spør. */
+export function sporsmalFor(dato) {
+  const tall = [...dato].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 100000, 7);
+  return SPORSMAL[tall % SPORSMAL.length];
+}
+
+/* ---------- milepæler ---------- */
+
+const MILEPÆLER = [100, 250, 500, 1000, 2500, 5000];
+
+/** Hvilken milepæl et tall nettopp passerte, hvis noen. */
+export const milepælFor = (antall, før) =>
+  MILEPÆLER.find((m) => før < m && antall >= m) ?? null;
+
+export const milepæl = (n) => [
+  '🎉 Milepæl!',
+  '',
+  `Lykke har skrevet ${n} gode ting i glasset.`,
+  '',
+  n >= 1000 ? 'Det er et helt liv av små ting.' : 'Det blir et fint glass.',
+].join('\n');
+
 /* ---------- menyen i Telegram ---------- */
 
 /** Forsida i boten. Én melding som bytter innhold, ikke en strøm av nye. */
@@ -227,11 +280,14 @@ export const MENYTEKST = [
   '  /si <tekst> – melding til Lykke',
   '  /brev <tekst> – brev til en dårlig dag',
   '  /onske <tekst> – på ønskelista',
+  '  /dag 2026-09-14 – én bestemt dag',
   '  /kode <ny kode> – ny kode for Lykke',
   '  /eksport – alt sammen som én fil',
 ].join('\n');
 
 /* ---------- ting hun gjør ---------- */
+
+export const REAKSJONER = ['❤️', '😂', '🥹', '✨'];
 
 export const HENDELSER = {
   innlogging: () => '🔓 Lykke logget inn i appen.',
@@ -242,6 +298,14 @@ export const HENDELSER = {
     : '🔒 Lykke slo av delt modus. Nå velger hun dag for dag.'),
   kode: () => '🔑 Lykke byttet koden sin.',
   huket: (tekst) => `✓ Lykke huket av: «${tekst}»`,
+  reaksjon: (tegn, tekst) => `${tegn} Lykke reagerte på «${tekst}»`,
+  etterslep: (dato, humor) => [
+    `🗓 Lykke fylte ut ${dato} i etterkant.`,
+    '',
+    `${humor} av 5 – ${HUMOR[humor]}`,
+    '',
+    'Varsler for gamle dager sier lite om hvordan hun har det nå, så dette er alt.',
+  ].join('\n'),
   angret: (tekst) => `○ Lykke tok bort haken på «${tekst}»`,
 };
 
@@ -257,6 +321,13 @@ export function dagsrapport(dag, dato) {
   if (dag.gode_ting?.length) {
     linjer.push('', 'Tre gode ting:');
     for (const g of dag.gode_ting) linjer.push(`  • ${g.tekst}`);
+  }
+  if (dag.svar) linjer.push('', `${dag.sporsmal}`, `  «${dag.svar}»`);
+  if (dag.filer?.length) {
+    const bilder = dag.filer.filter((f) => f.slag === 'bilde').length;
+    const lyd = dag.filer.length - bilder;
+    linjer.push('', [bilder && `${bilder} bilde${bilder > 1 ? 'r' : ''}`, lyd && `${lyd} lydklipp`]
+      .filter(Boolean).join(' og '));
   }
   if (dag.holdt_gode) linjer.push('', 'De gode tingene beholdt hun for seg selv.');
   if (dag.tungt) linjer.push('', `Hun skrev: «${dag.tungt}»`);

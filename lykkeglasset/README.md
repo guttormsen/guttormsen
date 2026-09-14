@@ -62,6 +62,28 @@ blir hørt på. Alle andre får høflig ingenting.
 `/logginn` gir deg en engangslenke rett inn i appen, gyldig i et kvarter.
 Du trenger aldri taste koden din igjen.
 
+### Føring bakover i tid
+
+Man husker ofte lenge etterpå at en dag var verdt å skrive ned. Trykk på en
+tom dag som har vært i kalenderen, så åpnes kveldsrunden for den datoen.
+
+Gamle dager varsler mildere enn dagens: «ring meg» fra en dag for tre uker
+siden er ikke et rop om hjelp, det er et minne. Er dagen mer enn ett døgn
+gammel, går det én stille beskjed om at den ble fylt ut – ikke alarmene.
+
+### Kveldens spørsmål
+
+Et skjema som ser likt ut 365 kvelder på rad blir et skjema. Derfor kommer
+det et spørsmål til i tillegg til de tre gode tingene, og det veksler: «Hva
+lo du av i dag?», «Hva sa du nei til?», «Hva vil du huske fra i dag om ti
+år?». Datoen bestemmer hvilket, så begge ser det samme, og det samme
+spørsmålet kommer igjen først om et par måneder.
+
+### Milepæler og reaksjoner
+
+Hundre, tusen, fem tusen gode ting i glasset gir en feiring i Telegram – én
+gang per milepæl. Og meldinger kan få et hjerte: trykk på bobla, velg tegnet.
+
 ### Bilder og lyd
 
 Ett eller flere bilder per dag, og lydklipp for de dagene det er lettere å si

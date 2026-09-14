@@ -48,6 +48,8 @@ AKTIV_MINUTTER = "30"
 MORGEN_KL = "08:00"
 # Uka samlet, søndag kveld.
 UKEBREV_KL = "20:00"
+# Hvor langt tilbake en dag kan fylles ut i etterkant, i dager.
+MAKS_TILBAKE = "3650"
 
 # Halvtimesticket brukes bare til å se om klokka har passert påminnelsestiden
 # i norsk tid. Cron kjører i UTC og kan ikke selv vite om det er sommertid.

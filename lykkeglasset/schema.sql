@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS onsker (
   gjort_av  TEXT
 );
 
+-- Kveldens spørsmål. Det veksler, så kveldsrunden ikke blir det samme
+-- skjemaet 365 ganger. Egen tabell framfor en kolonne til i `dager`, fordi
+-- SQLite ikke kan legge til kolonner uten å vite om de finnes fra før.
+CREATE TABLE IF NOT EXISTS svar (
+  dato      TEXT PRIMARY KEY,
+  sporsmal  TEXT NOT NULL,
+  tekst     TEXT NOT NULL,
+  skrevet_kl TEXT NOT NULL
+);
+
+-- Reaksjoner på meldinger. Én per melding per person.
+CREATE TABLE IF NOT EXISTS reaksjoner (
+  melding  INTEGER NOT NULL,
+  hvem     TEXT NOT NULL,
+  tegn     TEXT NOT NULL,
+  satt_kl  TEXT NOT NULL,
+  PRIMARY KEY (melding, hvem)
+);
+
 -- Bilder og lydklipp som hører til en dag. Selve fila ligger i KV; her står
 -- bare det som trengs for å finne den igjen og vite hva den er.
 CREATE TABLE IF NOT EXISTS filer (

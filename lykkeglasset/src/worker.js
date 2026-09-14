@@ -17,7 +17,7 @@ import {
 import {
   BEHOV, SVAR, ryddDag, varslerForDag, påminnelse, stilleDager, brevÅpnet, nyMelding, nyttOnske,
   erAktiv, morgenPuff, ukesbrev, arsbok, dagsrapport, onskeliste, statuslinje,
-  MENY, TILBAKE, MENYTEKST, HENDELSER,
+  MENY, TILBAKE, MENYTEKST, HENDELSER, REAKSJONER, sporsmalFor, milepælFor, milepæl,
 } from './varsler.js';
 import { sendTelegram, sendFil, kvitterTrykk, byttUtKnapper, endreMelding } from './telegram.js';
 
@@ -215,10 +215,18 @@ async function fellesTilstand(env) {
     env.DB.prepare('SELECT * FROM brev ORDER BY id').all(),
   ]);
 
+  const reaksjoner = await env.DB.prepare('SELECT melding, hvem, tegn FROM reaksjoner').all();
+  const påMelding = new Map();
+  for (const r of (reaksjoner.results ?? [])) {
+    if (!påMelding.has(r.melding)) påMelding.set(r.melding, []);
+    påMelding.get(r.melding).push({ hvem: r.hvem, tegn: r.tegn });
+  }
+
   return {
     dato,
     dager: (dager.results ?? []).map(radTilDag),
-    meldinger: (meldinger.results ?? []).reverse(),
+    meldinger: (meldinger.results ?? []).reverse()
+      .map((m) => ({ ...m, reaksjoner: påMelding.get(m.id) ?? [] })),
     onsker: onsker.results ?? [],
     brev: brev.results ?? [],
     behov: BEHOV,
@@ -234,6 +242,7 @@ async function tilstandLykke(env) {
     hvem: LYKKE,
     dato: f.dato,
     idag: await medFiler(env, dag, true),
+    sporsmal: sporsmalFor(f.dato),
     // Hennes egen historikk er hennes egen: også de private dagene har farge.
     historikk: alle.map((d) => ({ dato: d.dato, humor: d.humor, privat: d.privat })),
     ifjor: alle.find((d) => d.dato === sammeDagIFjor(f.dato)) ?? null,
@@ -264,6 +273,7 @@ async function tilstandMathias(env) {
     hvem: MATHIAS,
     dato: f.dato,
     idag: await medFiler(env, forHam(alle.find((d) => d.dato === f.dato) ?? null, delt), delt),
+    sporsmal: sporsmalFor(f.dato),
     siste: alle.slice(0, 14).map((d) => forHam(d, delt)),
     historikk: alle.map((d) => ({
       dato: d.dato,
@@ -290,11 +300,12 @@ async function tilstandMathias(env) {
 async function lagreDag(kropp, env, ctx) {
   const dato = typeof kropp.dato === 'string' ? kropp.dato : idag(env);
 
-  // Man skal kunne ta igjen i går, men ikke skrive om hele historien og ikke
-  // føre dager som ikke har vært ennå.
+  // Dager som ikke har vært, kan ikke føres. Bakover er det åpent – det er
+  // ofte lenge etterpå man husker at noe var verdt å skrive ned.
   const avstand = dagerMellom(dato, idag(env));
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato) || avstand < 0 || avstand > 6) {
-    return feil('Datoen må være i dag eller opptil seks dager tilbake.', 400);
+  const maksTilbake = Number(env.MAKS_TILBAKE) || 3650;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato) || avstand < 0 || avstand > maksTilbake) {
+    return feil('Datoen må være i dag eller tidligere.', 400);
   }
 
   const delt = await erDelt(env);
@@ -313,21 +324,53 @@ async function lagreDag(kropp, env, ctx) {
     r.del_gode, r.del_tungt, r.privat, tid,
   ).run();
 
+  const svaret = String(kropp?.svar ?? '').trim().slice(0, 1000);
+  if (svaret) {
+    await env.DB.prepare(`INSERT INTO svar (dato, sporsmal, tekst, skrevet_kl) VALUES (?1, ?2, ?3, ?4)
+                          ON CONFLICT(dato) DO UPDATE SET sporsmal = ?2, tekst = ?3`)
+      .bind(dato, sporsmalFor(dato), svaret, tid).run();
+  } else {
+    await env.DB.prepare('DELETE FROM svar WHERE dato = ?1').bind(dato).run();
+  }
+
   const dag = await hentDag(env, dato);
   const igår = await hentDag(env, sisteDager(dato, 2).at(-1));
   const sendt = await env.DB.prepare('SELECT slag FROM varsler WHERE dato = ?1').bind(dato).all();
 
-  const skalSendes = varslerForDag({
-    dag,
-    igår,
-    sendt: (sendt.results ?? []).map((x) => x.slag),
-  });
   const sendteNå = [];
-  for (const v of skalSendes) {
-    if (await sendEnGang(env, ctx, v.slag, dato, v.tekst, v.stille, v.knapper)) sendteNå.push(v.slag);
+
+  if (avstand > 1) {
+    // «Ring meg» fra en dag for tre uker siden er ikke et rop om hjelp, det er
+    // et minne. Gamle dager får én stille beskjed, ikke alarmene.
+    if (!dag.privat
+      && await sendEnGang(env, ctx, 'etterslep', dato,
+        HENDELSER.etterslep(norskDato(dato, true), dag.humor), true)) {
+      sendteNå.push('etterslep');
+    }
+  } else {
+    const skalSendes = varslerForDag({
+      dag,
+      igår,
+      sendt: (sendt.results ?? []).map((x) => x.slag),
+    });
+    for (const v of skalSendes) {
+      if (await sendEnGang(env, ctx, v.slag, dato, v.tekst, v.stille, v.knapper)) sendteNå.push(v.slag);
+    }
   }
 
-  return json({ dag, sendt: sendteNå, var_ny: !fraFør });
+  // Milepæler telles på alt hun har skrevet, uansett når dagen var.
+  const tall = await env.DB.prepare('SELECT gode_ting FROM dager').all();
+  const antall = (tall.results ?? []).reduce((n, r) => {
+    try {
+      return n + JSON.parse(r.gode_ting || '[]').length;
+    } catch {
+      return n;
+    }
+  }, 0);
+  const nådd = milepælFor(antall, antall - r.gode_ting.length);
+  if (nådd) await sendEnGang(env, ctx, `milepel:${nådd}`, dato, milepæl(nådd), false);
+
+  return json({ dag, sendt: sendteNå, var_ny: !fraFør, antall_gode_ting: antall });
 }
 
 /** Én tilfeldig god ting fra før i tiden. Helst noe hun har rukket å glemme. */
@@ -407,9 +450,13 @@ async function filerFor(env, datoer) {
  */
 async function medFiler(env, dag, egen) {
   if (!dag) return dag;
-  if (!egen && dag.privat) return { ...dag, filer: [] };
-  const kart = await filerFor(env, [dag.dato]);
-  return { ...dag, filer: kart.get(dag.dato) ?? [] };
+  const sporsmal = sporsmalFor(dag.dato);
+  if (!egen && dag.privat) return { ...dag, filer: [], sporsmal };
+  const [kart, svaret] = await Promise.all([
+    filerFor(env, [dag.dato]),
+    env.DB.prepare('SELECT tekst FROM svar WHERE dato = ?1').bind(dag.dato).first(),
+  ]);
+  return { ...dag, filer: kart.get(dag.dato) ?? [], sporsmal, svar: svaret?.tekst ?? null };
 }
 
 async function lagreFil(req, env, ctx, url) {
@@ -466,8 +513,13 @@ async function eksport(env, hvem) {
 
 /* ---------- det boten kan fortelle ---------- */
 
-const tekstIdag = async (env) =>
-  dagsrapport(forHam(await hentDag(env, idag(env)), await erDelt(env)), 'i dag');
+async function tekstDag(env, dato) {
+  const delt = await erDelt(env);
+  const dag = await medFiler(env, forHam(await hentDag(env, dato), delt), delt);
+  return dagsrapport(dag, dato === idag(env) ? 'i dag' : norskDato(dato, true));
+}
+
+const tekstIdag = (env) => tekstDag(env, idag(env));
 
 async function tekstUke(env) {
   const dato = idag(env);
@@ -699,6 +751,14 @@ async function fraTelegram(req, env, ctx, origin) {
     '/logginn lykke': 'lenkelykke',
     '/logginnlykke': 'lenkelykke',
   }[tekst];
+
+  // Én bestemt dag, for de gangene man lurer på hvordan det var.
+  const dagen = tekst.match(/^\/dag\s+(\d{4}-\d{2}-\d{2})$/);
+  if (dagen) {
+    const oppgave = sendTelegram(env, await tekstDag(env, dagen[1]), { stille: true, chat, knapper: TILBAKE });
+    if (ctx?.waitUntil) ctx.waitUntil(oppgave);
+    return json({ ok: true });
+  }
 
   if (tekst === '/eksport') {
     if (ctx?.waitUntil) ctx.waitUntil(sendEksport(env, chat));
@@ -937,7 +997,12 @@ async function api(req, env, url, ctx) {
     const dato = url.searchParams.get('dato') ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
     const dag = await hentDag(env, dato);
-    return json({ dag: await medFiler(env, erLykke ? dag : forHam(dag, await erDelt(env)), erLykke || await erDelt(env)) });
+    return json({
+      dag: await medFiler(env, erLykke ? dag : forHam(dag, await erDelt(env)), erLykke || await erDelt(env)),
+      // Spørsmålet hører til datoen, ikke til en oppføring. Ellers hadde en
+      // tom dag ikke hatt noe å spørre om.
+      sporsmal: sporsmalFor(dato),
+    });
   }
 
   if (sti === '/dag' && req.method === 'POST') {
@@ -954,6 +1019,29 @@ async function api(req, env, url, ctx) {
     // Bare den ene veien har en telefon å pinge. Den andre ser det i appen.
     if (erLykke) send(env, ctx, nyMelding(tekst));
     return json({ ok: true });
+  }
+
+  // Et hjerte på en melding. Trykk på det samme igjen, og det er borte.
+  const reaksjon = sti.match(/^\/melding\/(\d+)\/reaksjon$/);
+  if (reaksjon && req.method === 'POST') {
+    const id = Number(reaksjon[1]);
+    const tegn = REAKSJONER.includes(kropp?.tegn) ? kropp.tegn : null;
+    const melding = await env.DB.prepare('SELECT id, tekst FROM meldinger WHERE id = ?1').bind(id).first();
+    if (!melding) return feil('Fant ikke meldingen.', 404);
+
+    const fra_før = await env.DB.prepare('SELECT tegn FROM reaksjoner WHERE melding = ?1 AND hvem = ?2')
+      .bind(id, hvem).first();
+
+    if (!tegn || fra_før?.tegn === tegn) {
+      await env.DB.prepare('DELETE FROM reaksjoner WHERE melding = ?1 AND hvem = ?2').bind(id, hvem).run();
+      return json({ ok: true, tegn: null });
+    }
+
+    await env.DB.prepare(`INSERT INTO reaksjoner (melding, hvem, tegn, satt_kl) VALUES (?1, ?2, ?3, ?4)
+                          ON CONFLICT(melding, hvem) DO UPDATE SET tegn = ?3, satt_kl = ?4`)
+      .bind(id, hvem, tegn, nå()).run();
+    if (erLykke) send(env, ctx, HENDELSER.reaksjon(tegn, melding.tekst.slice(0, 60)), true);
+    return json({ ok: true, tegn });
   }
 
   if (sti === '/meldinger/lest' && req.method === 'POST') {

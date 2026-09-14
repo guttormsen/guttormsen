@@ -240,10 +240,45 @@ test('å rette dagen sender ikke varselet på nytt', async () => {
   assert.equal(sendte.length, førsteRunde, 'samme dag skal bare varsle én gang');
 });
 
-test('dager langt tilbake kan ikke føres', async () => {
-  const hennes = await loggInn('lykke');
-  const svar = await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { dato: '2020-01-01', humor: 3 } });
-  assert.equal(svar.status, 400);
+test('dager som ikke har vært, kan ikke føres', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  assert.equal((await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, 1), humor: 3 } })).status, 400);
+  assert.equal((await kall('/dag', { metode: 'POST', cookie, kropp: { dato: 'i-fjor', humor: 3 } })).status, 400);
+  assert.equal((await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -4000), humor: 3 } })).status, 400);
+});
+
+test('gamle dager kan fylles ut, og varsler mildere enn dagens', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  const lengeSiden = flyttDag(idag, -40);
+  sendte.length = 0;
+
+  const svar = await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { dato: lengeSiden, humor: 1, behov: 'ringe', gode_ting: [{ tekst: 'husket det nå' }] },
+  });
+  assert.equal(svar.status, 200);
+
+  // Ingen alarm for en dag som var for seks uker siden.
+  assert.equal(sendte.length, 1);
+  assert.equal(sendte[0].disable_notification, true);
+  assert.ok(sendte[0].text.includes('i etterkant'));
+  assert.ok(!alleMeldinger().includes('trenger deg nå'));
+
+  const hentet = await (await kall(`/dag?dato=${lengeSiden}`, { cookie })).json();
+  assert.equal(hentet.dag.humor, 1);
+});
+
+test('en gammel privat dag sier ingenting i det hele tatt', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  sendte.length = 0;
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { dato: flyttDag(idag, -20), humor: 2, privat: true },
+  });
+  assert.deepEqual(sendte, []);
 });
 
 /* ---------- den andre veien ---------- */
@@ -1229,4 +1264,108 @@ test('han ser ikke engang at det ligger et bilde på en privat dag', async () =>
   assert.deepEqual(via.dag.filer, []);
   const t = await (await kall('/tilstand', { cookie: hans })).json();
   assert.deepEqual(t.idag.filer, []);
+});
+
+/* ---------- reaksjoner ---------- */
+
+test('et hjerte kan settes, byttes og tas bort igjen', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'Er straks hjemme' } });
+
+  const hennes = await loggInn('lykke');
+  let t = await (await kall('/tilstand', { cookie: hennes })).json();
+  const id = t.meldinger[0].id;
+
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hennes, kropp: { tegn: '❤️' } });
+  t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.deepEqual(t.meldinger[0].reaksjoner, [{ hvem: 'lykke', tegn: '❤️' }]);
+
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hennes, kropp: { tegn: '😂' } });
+  t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.deepEqual(t.meldinger[0].reaksjoner, [{ hvem: 'lykke', tegn: '😂' }]);
+
+  // Samme tegn om igjen tar det bort.
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hennes, kropp: { tegn: '😂' } });
+  t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.deepEqual(t.meldinger[0].reaksjoner, []);
+});
+
+test('begge kan reagere på den samme meldingen', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'hei' } });
+  const t0 = await (await kall('/tilstand', { cookie: hans })).json();
+  const id = t0.meldinger[0].id;
+
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hans, kropp: { tegn: '✨' } });
+  const hennes = await loggInn('lykke');
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hennes, kropp: { tegn: '❤️' } });
+
+  const t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.equal(t.meldinger[0].reaksjoner.length, 2);
+});
+
+test('hennes reaksjon sier fra, hans gjør ikke', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'Jeg tar middagen' } });
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  const id = t.meldinger[0].id;
+
+  sendte.length = 0;
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hans, kropp: { tegn: '❤️' } });
+  assert.deepEqual(sendte, []);
+
+  const hennes = await loggInn('lykke');
+  sendte.length = 0;
+  await kall(`/melding/${id}/reaksjon`, { metode: 'POST', cookie: hennes, kropp: { tegn: '❤️' } });
+  assert.ok(sisteSvar().includes('reagerte på'));
+  assert.ok(sisteSvar().includes('Jeg tar middagen'));
+});
+
+test('ukjente tegn settes ikke', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'hei' } });
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  await kall(`/melding/${t.meldinger[0].id}/reaksjon`, { metode: 'POST', cookie: hans, kropp: { tegn: '<script>' } });
+  const etter = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.deepEqual(etter.meldinger[0].reaksjoner, []);
+});
+
+test('/dag <dato> henter en bestemt dag, med svaret på kveldens spørsmål', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  const dato = flyttDag(idag, -3);
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { dato, humor: 5, gode_ting: [{ tekst: 'sol' }], svar: 'Vi lo av katten' },
+  });
+
+  sendte.length = 0;
+  await fraEier(`/dag ${dato}`);
+  assert.ok(sisteSvar().includes('Vi lo av katten'));
+  assert.ok(sisteSvar().includes('sol'));
+});
+
+test('/dag med tull som dato gjør ingenting', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/dag i-fjor');
+  assert.deepEqual(sendte, []);
+});
+
+test('spørsmålet følger datoen, også for en dag som ikke er skrevet', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  const tom = flyttDag(idag, -12);
+
+  const svar = await (await kall(`/dag?dato=${tom}`, { cookie })).json();
+  assert.equal(svar.dag, null);
+  assert.ok(svar.sporsmal.length > 5, 'en tom dag har også et spørsmål');
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.ok(t.sporsmal.length > 5);
+  assert.notEqual(t.sporsmal, svar.sporsmal, 'ulike dager, ulike spørsmål');
 });
