@@ -44,11 +44,7 @@ export async function sendTelegram(env, tekst, { stille = false, knapper = null,
     disable_notification: stille,
     link_preview_options: { is_disabled: true },
   };
-  if (knapper?.length) {
-    kropp.reply_markup = {
-      inline_keyboard: knapper.map((rad) => rad.map(([t, d]) => ({ text: t, callback_data: d }))),
-    };
-  }
+  if (knapper?.length) kropp.reply_markup = tastatur(knapper);
   return Boolean(await kall(env, 'sendMessage', kropp));
 }
 
@@ -65,6 +61,25 @@ export const byttUtKnapper = (env, chat, melding, tekst) =>
     chat_id: chat,
     message_id: melding,
     reply_markup: { inline_keyboard: [[{ text: tekst, callback_data: 'gjort' }]] },
+  });
+
+const tastatur = (knapper) => ({
+  inline_keyboard: knapper.map((rad) => rad.map(([t, d]) => ({ text: t, callback_data: d }))),
+});
+
+/**
+ * Skriver om meldingen han allerede ser på.
+ *
+ * Det er det som gjør menyen til en meny: én melding som bytter innhold,
+ * i stedet for en ny melding for hvert trykk.
+ */
+export const endreMelding = (env, chat, melding, tekst, knapper) =>
+  kall(env, 'editMessageText', {
+    chat_id: chat,
+    message_id: melding,
+    text: tekst,
+    link_preview_options: { is_disabled: true },
+    ...(knapper?.length ? { reply_markup: tastatur(knapper) } : {}),
   });
 
 /** Sier fra til Telegram hvor svarene skal sendes. Kjøres av oppsettskriptet. */

@@ -207,6 +207,42 @@ export function ukesbrev(uke, godeTing) {
   return linjer.join('\n');
 }
 
+/* ---------- menyen i Telegram ---------- */
+
+/** Forsida i boten. Én melding som bytter innhold, ikke en strøm av nye. */
+export const MENY = [
+  [['📅 I dag', 'meny:idag'], ['📆 Uka', 'meny:uke']],
+  [['🫙 Glasset', 'meny:glasset'], ['📊 Status', 'meny:status']],
+  [['✨ Ønskelista', 'meny:onsker'], ['💌 Brev', 'meny:brev']],
+  [['🔑 Logg meg inn', 'meny:logginn'], ['🔗 Lenke til Lykke', 'meny:lenkelykke']],
+];
+
+export const TILBAKE = [[['‹ Meny', 'meny:hjem']]];
+
+export const MENYTEKST = [
+  '🫙 Lykkeglasset',
+  '',
+  'Trykk deg rundt, eller skriv:',
+  '  /si <tekst> – melding til Lykke',
+  '  /brev <tekst> – brev til en dårlig dag',
+  '  /onske <tekst> – på ønskelista',
+  '  /kode <ny kode> – ny kode for Lykke',
+].join('\n');
+
+/* ---------- ting hun gjør ---------- */
+
+export const HENDELSER = {
+  innlogging: () => '🔓 Lykke logget inn i appen.',
+  begynt: () => '✍️ Lykke holder på med kveldsrunden nå.',
+  lest: () => '👀 Lykke har lest meldingene dine.',
+  deling: (på) => (på
+    ? '🔓 Lykke slo på delt modus. Du ser alt hun fører nå.'
+    : '🔒 Lykke slo av delt modus. Nå velger hun dag for dag.'),
+  kode: () => '🔑 Lykke byttet koden sin.',
+  huket: (tekst) => `✓ Lykke huket av: «${tekst}»`,
+  angret: (tekst) => `○ Lykke tok bort haken på «${tekst}»`,
+};
+
 /* ---------- svar på spørsmål fra Telegram ---------- */
 
 /** Dagen hennes, slik den spørres etter. */

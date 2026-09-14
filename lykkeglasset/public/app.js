@@ -243,6 +243,8 @@ function kveldsrunden(t, ferdig) {
   };
   let steg = 0;
   fanerad.replaceChildren();
+  // Si fra at hun er i gang. Det er den ene hendelsen serveren ikke kan se selv.
+  api('/hendelse', { metode: 'POST', kropp: { slag: 'begynt' } }).catch(() => {});
 
   const ramme = (tittel, undertittel, innhold, { videre = 'Videre', kanVidere = true, siste = false } = {}) =>
     tegn(el('div', { class: 'steg' }, [

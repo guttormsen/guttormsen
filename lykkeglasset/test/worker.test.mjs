@@ -27,6 +27,7 @@ class Setning {
 
 let db;
 let sendte;
+let endret;
 let env;
 
 const ekteFetch = globalThis.fetch;
@@ -35,10 +36,15 @@ beforeEach(() => {
   db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   sendte = [];
+  endret = [];
   globalThis.fetch = async (url, valg) => {
     if (String(url).includes('api.telegram.org')) {
-      sendte.push(JSON.parse(valg.body));
-      return new Response('{"ok":true}', { status: 200 });
+      const kropp = JSON.parse(valg.body);
+      // Menyen skriver om meldinger i stedet for å sende nye. De to holdes
+      // fra hverandre, ellers ville hver telling av «sendte» vært feil.
+      if (String(url).includes('editMessageText')) endret.push(kropp);
+      else if (String(url).includes('sendMessage')) sendte.push(kropp);
+      return new Response('{"ok":true,"result":{}}', { status: 200 });
     }
     return ekteFetch(url, valg);
   };
@@ -55,6 +61,9 @@ beforeEach(() => {
     // Testene under kjører i personvernmodus, der hun styrer hva som deles.
     // Delt modus har sine egne tester nederst.
     DELT_MODUS: 'nei',
+    // Hendelsesvarslene ville ellers blandet seg inn i hver eneste telling.
+    // De har sine egne tester.
+    AKTIV_VARSEL: 'nei',
   };
 });
 
@@ -459,18 +468,6 @@ test('delt modus sender det hun skrev, og ber ikke om lov', async () => {
   assert.equal(t.idag.tungt, 'sliten av alt');
 });
 
-test('delt modus sier fra når hun er inne, høyst én gang i timen', async () => {
-  env.DELT_MODUS = 'ja';
-  const cookie = await loggInn('lykke');
-  sendte.length = 0;
-  await kall('/tilstand', { cookie });
-  await kall('/tilstand', { cookie });
-  await kall('/tilstand', { cookie });
-  const aktiv = sendte.filter((m) => m.text.includes('inne i appen'));
-  assert.equal(aktiv.length, 1);
-  assert.equal(aktiv[0].disable_notification, true);
-});
-
 test('at han åpner appen, varsler ingen', async () => {
   env.DELT_MODUS = 'ja';
   const cookie = await loggInn('mathias');
@@ -771,13 +768,26 @@ test('koden ligger ikke i klartekst i databasen', async () => {
 
 const sisteSvar = () => sendte.at(-1)?.text ?? '';
 
-test('/hjelp viser hva boten kan', async () => {
+const knappene = (m) => (m?.reply_markup?.inline_keyboard ?? []).flat().map((k) => k.callback_data);
+
+test('/meny gir en meny med knapper', async () => {
   env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
   await blirEier();
   sendte.length = 0;
-  await fraEier('/hjelp');
-  for (const k of ['/idag', '/uke', '/status', '/glasset', '/si', '/brev', '/onske', '/logginn', '/kode']) {
-    assert.ok(sisteSvar().includes(k), `mangler ${k}`);
+  await fraEier('/meny');
+  const data = knappene(sendte.at(-1));
+  for (const k of ['meny:idag', 'meny:uke', 'meny:glasset', 'meny:status', 'meny:onsker', 'meny:brev', 'meny:logginn', 'meny:lenkelykke']) {
+    assert.ok(data.includes(k), `mangler ${k}`);
+  }
+});
+
+test('/hjelp og /start gir den samme menyen', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  for (const kommando of ['/hjelp', '/start']) {
+    sendte.length = 0;
+    await fraEier(kommando);
+    assert.ok(knappene(sendte.at(-1)).includes('meny:idag'), kommando);
   }
 });
 
@@ -940,4 +950,109 @@ test('de to lenkene spiser ikke hverandre', async () => {
   const alle = [...sendte.map((m) => m.text).join('\n').matchAll(/\/api\/lenke\?t=([\w.\-]+)/g)].map((m) => m[1]);
   assert.equal(alle.length, 2);
   for (const t of alle) assert.equal((await kall(`/lenke?t=${t}`)).status, 302);
+});
+
+/* ---------- varsel på det hun gjør ---------- */
+
+test('innlogging, kveldsrunde og lesing sier fra – stille', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  sendte.length = 0;
+  const cookie = await loggInn('lykke');
+  assert.ok(sisteSvar().includes('logget inn'));
+  assert.equal(sendte.at(-1).disable_notification, true);
+
+  sendte.length = 0;
+  await kall('/hendelse', { metode: 'POST', cookie, kropp: { slag: 'begynt' } });
+  assert.ok(sisteSvar().includes('kveldsrunden'));
+
+  // Bare én gang samme dag.
+  sendte.length = 0;
+  await kall('/hendelse', { metode: 'POST', cookie, kropp: { slag: 'begynt' } });
+  assert.deepEqual(sendte, []);
+});
+
+test('han utløser ingen hendelsesvarsler om seg selv', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  sendte.length = 0;
+  const cookie = await loggInn('mathias');
+  await kall('/hendelse', { metode: 'POST', cookie, kropp: { slag: 'begynt' } });
+  await kall('/tilstand', { cookie });
+  assert.deepEqual(sendte, []);
+});
+
+test('at hun leser meldingene sies fra, men bare når det lå noe ulest', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const hans = await loggInn('mathias');
+  await kall('/melding', { metode: 'POST', cookie: hans, kropp: { tekst: 'hei' } });
+
+  const hennes = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/meldinger/lest', { metode: 'POST', cookie: hennes });
+  assert.ok(sisteSvar().includes('lest meldingene'));
+
+  sendte.length = 0;
+  await kall('/meldinger/lest', { metode: 'POST', cookie: hennes });
+  assert.deepEqual(sendte, [], 'ingenting nytt å lese, ingenting å si fra om');
+});
+
+test('at hun snur delingen sies fra med lyd', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  await kall('/delt', { metode: 'POST', cookie, kropp: { på: true } });
+  assert.ok(sisteSvar().includes('slo på delt modus'));
+  assert.equal(sendte.at(-1).disable_notification, false);
+});
+
+test('at hun huker av et ønske sies fra', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const cookie = await loggInn('lykke');
+  await kall('/onske', { metode: 'POST', cookie, kropp: { tekst: 'Bade i Nordsjøen' } });
+  const t = await (await kall('/tilstand', { cookie })).json();
+  sendte.length = 0;
+  await kall(`/onske/${t.onsker[0].id}/gjort`, { metode: 'POST', cookie });
+  assert.ok(sisteSvar().includes('huket av'));
+  assert.ok(sisteSvar().includes('Bade i Nordsjøen'));
+});
+
+test('«hun er inne» kommer ett per vindu, ikke ett per trykk', async () => {
+  env.AKTIV_VARSEL = 'ja';
+  const cookie = await loggInn('lykke');
+  sendte.length = 0;
+  for (let i = 0; i < 4; i += 1) await kall('/tilstand', { cookie });
+  assert.equal(sendte.filter((m) => m.text.includes('inne i appen')).length, 1);
+});
+
+/* ---------- menyen ---------- */
+
+test('et menytrykk skriver om meldingen i stedet for å sende en ny', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  env.AKTIV_VARSEL = 'nei';
+  await blirEier();
+  sendte.length = 0;
+  await oppdatering({
+    callback_query: { id: 'c2', from: { id: EIER }, data: 'meny:status', message: { message_id: 9, chat: { id: -1 } } },
+  });
+  assert.deepEqual(sendte, [], 'ingen ny melding skal sendes');
+  assert.ok(endret.at(-1)?.text.includes('Status'));
+  assert.ok(knappene(endret.at(-1)).includes('meny:hjem'), 'skal ha en vei tilbake');
+});
+
+test('ønskelista kan hukes av fra knappene', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await fraEier('/onske Kino på en tirsdag');
+
+  const cookie = await loggInn('lykke');
+  const t = await (await kall('/tilstand', { cookie })).json();
+  const id = t.onsker[0].id;
+
+  endret.length = 0;
+  await oppdatering({
+    callback_query: { id: 'c3', from: { id: EIER }, data: `onske:${id}`, message: { message_id: 9, chat: { id: -1 } } },
+  });
+  assert.ok(endret.at(-1)?.text.includes('✓ Kino på en tirsdag'));
+
+  const etter = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(etter.onsker[0].gjort_av, 'mathias');
 });
