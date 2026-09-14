@@ -880,3 +880,64 @@ test('kommandoene virker ikke for andre enn eieren', async () => {
     metode: 'POST', kropp: { hvem: 'lykke', kode: 'jeg-tar-over' },
   })).status, 401);
 });
+
+/* ---------- delingen er hennes valg ---------- */
+
+test('hun kan slå delt modus av og på, og han ser det', async () => {
+  const hennes = await loggInn('lykke');
+  assert.equal((await kall('/delt', { metode: 'POST', cookie: hennes, kropp: { på: true } })).status, 200);
+
+  const hans = await loggInn('mathias');
+  let t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.equal(t.delt, true);
+  assert.ok(t.meldinger.some((m) => m.fra === 'lykke' && m.tekst.includes('slått på delt modus')));
+
+  await kall('/delt', { metode: 'POST', cookie: hennes, kropp: { på: false } });
+  t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.equal(t.delt, false);
+});
+
+test('han kan ikke snu delingen for henne', async () => {
+  const hans = await loggInn('mathias');
+  assert.equal((await kall('/delt', { metode: 'POST', cookie: hans, kropp: { på: true } })).status, 403);
+});
+
+test('valget hennes går foran oppsettsfila', async () => {
+  env.DELT_MODUS = 'ja';
+  const hennes = await loggInn('lykke');
+  await kall('/delt', { metode: 'POST', cookie: hennes, kropp: { på: false } });
+
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 2, tungt: 'mitt eget', privat: true } });
+  const hans = await loggInn('mathias');
+  const t = await (await kall('/tilstand', { cookie: hans })).json();
+  assert.equal(t.idag.privat, true);
+  assert.ok(!JSON.stringify(t).includes('mitt eget'));
+});
+
+test('hun får også en engangslenke, og den logger inn henne', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/logginn lykke');
+
+  const lenke = sendte.map((m) => m.text).join('\n').match(/\/api\/lenke\?t=([\w.\-]+)/);
+  assert.ok(lenke, 'skulle fått en lenke');
+
+  const svar = await kall(`/lenke?t=${lenke[1]}`);
+  assert.equal(svar.status, 302);
+  const cookie = svar.headers.get('Set-Cookie').split(';')[0];
+  assert.equal((await (await kall('/meg', { cookie })).json()).hvem, 'lykke');
+  assert.equal((await kall(`/lenke?t=${lenke[1]}`)).status, 401, 'også hennes skal være brukt opp');
+});
+
+test('de to lenkene spiser ikke hverandre', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+  await fraEier('/logginn');
+  await fraEier('/logginn lykke');
+
+  const alle = [...sendte.map((m) => m.text).join('\n').matchAll(/\/api\/lenke\?t=([\w.\-]+)/g)].map((m) => m[1]);
+  assert.equal(alle.length, 2);
+  for (const t of alle) assert.equal((await kall(`/lenke?t=${t}`)).status, 302);
+});

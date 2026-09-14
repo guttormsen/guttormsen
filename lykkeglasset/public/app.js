@@ -997,8 +997,59 @@ function faneOss(t) {
           `${kortDato(b.laget_kl.slice(0, 10))} – ${b.apnet_kl ? `åpnet ${kortDato(b.apnet_kl.slice(0, 10))}` : 'ligger klart'}`))),
     ]),
 
+    delingKort(t),
     kodeKort(t),
   );
+}
+
+/**
+ * Delingen.
+ *
+ * Bryteren sitter hos den det gjelder. Han ser hva den står på – det er
+ * forskjellen på innsyn og en bakvei – men det er hun som snur den.
+ */
+function delingKort(t) {
+  if (t.hvem !== 'lykke') {
+    return el('div', { class: 'kort' }, [
+      el('p', { class: 'stempel', text: 'Deling' }),
+      el('p', { style: 'margin:.6rem 0 0' }, [
+        el('strong', { text: t.delt ? 'Delt modus er på. ' : 'Lykke velger dag for dag. ' }),
+        t.delt
+          ? 'Du ser alt hun fører.'
+          : 'Du ser dagene hun deler, og at de andre finnes.',
+      ]),
+      el('p', { class: 'liten svak', style: 'margin:.6rem 0 0', text: 'Det er hun som styrer denne.' }),
+    ]);
+  }
+
+  const velg = async (på) => {
+    try {
+      await api('/delt', { metode: 'POST', kropp: { på } });
+      si(på ? 'Delt modus er på.' : 'Du velger dag for dag igjen.');
+      await start();
+    } catch (e) { si(e.message); }
+  };
+
+  return el('div', { class: 'kort' }, [
+    el('p', { class: 'stempel', text: 'Deling' }),
+    el('p', { class: 'svak liten', style: 'margin:.6rem 0 .8rem', text: 'Hvor mye Mathias får se. Du kan snu den når du vil.' }),
+    el('div', { class: 'brikker' }, [
+      el('button', {
+        type: 'button', 'aria-pressed': String(!t.delt),
+        onclick: () => velg(false), text: 'Jeg velger dag for dag',
+      }),
+      el('button', {
+        type: 'button', 'aria-pressed': String(t.delt),
+        onclick: () => velg(true), text: 'Del alt',
+      }),
+    ]),
+    el('p', {
+      class: 'liten svak', style: 'margin:.8rem 0 0',
+      text: t.delt
+        ? 'Alt du fører går til Mathias. «Bare for meg» finnes ikke så lenge dette står på.'
+        : 'Hver kveld velger du om dagen deles. De du holder for deg selv, ser han bare at finnes.',
+    }),
+  ]);
 }
 
 /**

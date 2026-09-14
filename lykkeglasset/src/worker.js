@@ -42,11 +42,16 @@ const feil = (tekst, status) => json({ feil: tekst }, status);
 
 const sone = (env) => env.TIDSSONE || 'Europe/Oslo';
 /**
- * Delt modus: alt hun fører, ser han, og hver dag varsles. Da finnes ikke
- * valgene om å holde noe tilbake – appen tilbyr dem ikke, i stedet for å
- * tilby dem og overse dem.
+ * Delt modus: alt hun fører, ser han, og da finnes ikke «bare for meg».
+ *
+ * Det er hennes valg, og det bor i databasen – ikke i oppsettsfila. En bryter
+ * som bare kan snus av den som har utviklerverktøy, er ikke hennes.
+ * `DELT_MODUS` i wrangler.toml er bare utgangspunktet, før hun har valgt.
  */
-const erDelt = (env) => env.DELT_MODUS === 'ja';
+async function erDelt(env) {
+  const valgt = await lesOppsett(env, 'delt_modus');
+  return valgt === null ? env.DELT_MODUS === 'ja' : valgt === 'ja';
+}
 const idag = (env) => dagsnokkel(new Date(), sone(env));
 const nå = () => new Date().toISOString();
 
@@ -234,7 +239,7 @@ async function tilstandLykke(env) {
     onsker: f.onsker,
     brev: f.brev.filter((b) => !b.apnet_kl).map(({ id, laget_kl }) => ({ id, laget_kl })),
     behov: f.behov,
-    delt: erDelt(env),
+    delt: await erDelt(env),
     kan_bytte_egen: true,
   };
 }
@@ -242,7 +247,7 @@ async function tilstandLykke(env) {
 async function tilstandMathias(env) {
   const f = await fellesTilstand(env);
   const alle = f.dager;
-  const delt = erDelt(env);
+  const delt = await erDelt(env);
 
   const omOss = [];
   for (const d of alle) {
@@ -287,7 +292,7 @@ async function lagreDag(kropp, env, ctx) {
     return feil('Datoen må være i dag eller opptil seks dager tilbake.', 400);
   }
 
-  const delt = erDelt(env);
+  const delt = await erDelt(env);
   const r = ryddDag(kropp, delt);
   const tid = nå();
   const fraFør = await hentDag(env, dato);
@@ -350,6 +355,7 @@ async function trekkLapp(env) {
 
 /** Alt hun har skrevet, søkbart. Han ser bare det hun har delt. */
 async function arkiv(env, hvem, url) {
+  const delt = await erDelt(env);
   const sok = (url.searchParams.get('sok') ?? '').trim().toLowerCase();
   const bareOss = url.searchParams.get('oss') === 'ja';
   const rader = await env.DB.prepare('SELECT * FROM dager ORDER BY dato DESC').all();
@@ -357,7 +363,7 @@ async function arkiv(env, hvem, url) {
   const ut = [];
   for (const rad of (rader.results ?? [])) {
     const dag = radTilDag(rad);
-    if (hvem !== LYKKE && !erDelt(env) && (dag.privat || !dag.del_gode)) continue;
+    if (hvem !== LYKKE && !delt && (dag.privat || !dag.del_gode)) continue;
     for (const g of dag.gode_ting) {
       if (!g?.tekst) continue;
       if (bareOss && !g.om_oss) continue;
@@ -384,6 +390,7 @@ const KOMMANDOER = [
   '/onsker – vis ønskelista',
   '',
   '/logginn – engangslenke rett inn i appen',
+  '/logginn lykke – engangslenke du kan sende til henne',
   '/kode <ny kode> – sett ny kode for Lykke',
   '/hjelp – denne lista',
   '',
@@ -452,6 +459,18 @@ async function fraTelegram(req, env, ctx, origin) {
     return json({ ok: true });
   }
 
+  if (tekst === '/logginn lykke' || tekst === '/logginnlykke') {
+    const token = await lagToken(LYKKE, `${env.SESJON_HEMMELIG}:lenke`, Date.now(), 900000);
+    await skrivOppsett(env, 'lenke_lykke', token);
+    svarTil(env, ctx, chat, [
+      'Lenke til Lykke, gyldig i et kvarter og bare én gang.',
+      'Send den videre til henne – den logger inn den som åpner den.',
+      '',
+      `${origin}/api/lenke?t=${token}`,
+    ].join('\n'));
+    return json({ ok: true });
+  }
+
   if (tekst === '/logginn') {
     // Egen nøkkel for lenker: en sesjonskapsel skal ikke kunne brukes som
     // lenke, og en lenke skal ikke kunne brukes som kapsel.
@@ -475,7 +494,7 @@ async function fraTelegram(req, env, ctx, origin) {
 
   if (tekst === '/idag') {
     const dato = idag(env);
-    svarTil(env, ctx, chat, dagsrapport(forHam(await hentDag(env, dato), erDelt(env)), 'i dag'));
+    svarTil(env, ctx, chat, dagsrapport(forHam(await hentDag(env, dato), await erDelt(env)), 'i dag'));
     return json({ ok: true });
   }
 
@@ -575,12 +594,13 @@ async function arsboka(env, hvem, url) {
     .prepare('SELECT * FROM dager WHERE dato >= ?1 AND dato <= ?2 ORDER BY dato')
     .bind(`${ar}-01-01`, `${ar}-12-31`).all();
 
+  const delt = await erDelt(env);
   const måneder = new Map();
   let antall = 0;
   let dager = 0;
   for (const rad of (rader.results ?? [])) {
     const dag = radTilDag(rad);
-    if (hvem !== LYKKE && !erDelt(env) && (dag.privat || !dag.del_gode)) continue;
+    if (hvem !== LYKKE && !delt && (dag.privat || !dag.del_gode)) continue;
     dager += 1;
     const md = dag.dato.slice(0, 7);
     if (!måneder.has(md)) måneder.set(md, []);
@@ -616,13 +636,15 @@ async function api(req, env, url, ctx) {
 
   if (sti === '/lenke' && req.method === 'GET') {
     const t = url.searchParams.get('t') ?? '';
-    const lagret = await lesOppsett(env, 'lenke');
     const gjelder = await lesToken(t, `${env.SESJON_HEMMELIG}:lenke`);
-    if (!t || !lagret || t !== lagret || gjelder !== MATHIAS) {
-      return feil('Lenken er brukt opp eller utløpt. Send /logginn på nytt.', 401);
+    // Én lenke om gangen per person, og den forsvinner når den er brukt.
+    const nøkkel = gjelder === LYKKE ? 'lenke_lykke' : 'lenke';
+    const lagret = await lesOppsett(env, nøkkel);
+    if (!t || !lagret || t !== lagret || !(gjelder === MATHIAS || gjelder === LYKKE)) {
+      return feil('Lenken er brukt opp eller utløpt. Be om en ny.', 401);
     }
-    await skrivOppsett(env, 'lenke', '');
-    const token = await lagToken(MATHIAS, env.SESJON_HEMMELIG);
+    await skrivOppsett(env, nøkkel, '');
+    const token = await lagToken(gjelder, env.SESJON_HEMMELIG);
     return new Response(null, {
       status: 302,
       headers: { Location: '/', 'Set-Cookie': settCookie(token), 'Cache-Control': 'no-store' },
@@ -645,6 +667,20 @@ async function api(req, env, url, ctx) {
   }
   if (sti === '/glasset') return json(await trekkLapp(env));
   if (sti === '/arkiv') return arkiv(env, hvem, url);
+
+  /**
+   * Delt modus er hennes valg, ikke hans. Han kan se hva det står på, og be
+   * om det – men bryteren sitter hos den det gjelder.
+   */
+  if (sti === '/delt' && req.method === 'POST') {
+    if (!erLykke) return feil('Dette er Lykkes valg.', 403);
+    const på = kropp?.på === true;
+    await skrivOppsett(env, 'delt_modus', på ? 'ja' : 'nei');
+    await leggMelding(env, LYKKE, på
+      ? 'Jeg har slått på delt modus. Du ser alt jeg fører her nå.'
+      : 'Jeg har slått av delt modus. Nå velger jeg selv hvilke dager jeg deler.');
+    return json({ ok: true, delt: på });
+  }
 
   /**
    * Bytt kode. Hun kan alltid bytte sin egen. Mathias kan i tillegg sette en
@@ -671,7 +707,7 @@ async function api(req, env, url, ctx) {
     const dato = url.searchParams.get('dato') ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
     const dag = await hentDag(env, dato);
-    return json({ dag: erLykke ? dag : forHam(dag, erDelt(env)) });
+    return json({ dag: erLykke ? dag : forHam(dag, await erDelt(env)) });
   }
 
   if (sti === '/dag' && req.method === 'POST') {
