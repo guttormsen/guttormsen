@@ -62,6 +62,24 @@ blir hørt på. Alle andre får høflig ingenting.
 `/logginn` gir deg en engangslenke rett inn i appen, gyldig i et kvarter.
 Du trenger aldri taste koden din igjen.
 
+### Koder som kan byttes
+
+Kodene starter som hemmeligheter hos Cloudflare, men de kan byttes inne i
+appen – under **Oss → Koder**. Begge kan bytte sin egen; Mathias kan i tillegg
+sette en ny for Lykke, for de dagene hun har glemt sin.
+
+Da legges koden i databasen som en PBKDF2-hash med eget salt, ikke som tekst,
+og det er den som gjelder fra da av. Hemmeligheten fra oppsettet er bare
+utgangspunktet.
+
+Setter han en ny for henne, får hun en melding om det i samtalen. En kode som
+byttes i det skjulte er ikke en kode – det er en lås.
+
+I den publiserte utgaven uten server er koden hennes også nøkkelen til det hun
+holder for seg selv. Der kan ingen andre sette en ny, og bytter hun selv,
+låses alt det skjulte opp og igjen med den nye nøkkelen – eller så byttes
+ingenting.
+
 **3. Hun får noe tilbake.** En app som bare rapporterer oppover blir en
 plikt. Derfor ligger det en hilsen fra ham klar om morgenen, brev han har
 skrevet på forhånd til dårlige dager, og «glasset»: en tilfeldig god ting hun

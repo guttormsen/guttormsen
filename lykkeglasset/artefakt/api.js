@@ -217,7 +217,17 @@ async function tilstand() {
   // Gjorte ønsker nederst, ellers nyeste først – samme rekkefølge som på serveren.
   const onsker = radene(onskerSnap).sort((a, b) => Number(Boolean(a.gjort_kl)) - Number(Boolean(b.gjort_kl)));
   const brev = radene(brevSnap);
-  const felles = { dato, meldinger, onsker, behov: BEHOV, delt: false };
+  const felles = {
+    dato,
+    meldinger,
+    onsker,
+    behov: BEHOV,
+    delt: false,
+    // Her er koden hennes også nøkkelen til det hun holder for seg selv. Da
+    // kan ingen andre sette en ny – da ville innholdet blitt uleselig.
+    kan_bytte_egen: hvem === LYKKE,
+    kan_bytte_hennes: false,
+  };
 
   if (hvem === LYKKE) {
     const åpnede = await Promise.all(alle.map(lesDag));
@@ -354,6 +364,36 @@ export async function api(full, { metode = 'GET', kropp } = {}) {
   if (sti === '/dag' && metode === 'POST') {
     if (!erLykke) throw new Error('Bare Lykke skriver kveldsrunden.');
     return lagreDag(kropp ?? {});
+  }
+
+  /**
+   * Bytt kode. Bare hennes egen, og bare av henne: koden er nøkkelen til det
+   * låste, så et bytte må låse opp alt med den gamle og igjen med den nye.
+   * Går noe galt midtveis, er det bedre å ikke ha byttet i det hele tatt.
+   */
+  if (sti === '/kode' && metode === 'POST') {
+    if (!erLykke || kropp?.hvem !== LYKKE) throw new Error('Her kan bare Lykke bytte sin egen kode.');
+    const ny = String(kropp?.kode ?? '');
+    if (ny.length < 6) throw new Error('Koden må være minst seks tegn.');
+    if (!nokkel) throw new Error('Du må være logget inn med koden din for å bytte den.');
+
+    const nyNokkel = await lagNokkel(ny);
+    const låste = radene(await db.collection('dager').get()).filter((r) => r.skjult);
+
+    // Alt låses opp først. Får vi ikke opp én av dem, byttes ingenting.
+    const åpnet = [];
+    for (const rad of låste) {
+      const innhold = await låsOpp(nokkel, rad.skjult);
+      if (!innhold) throw new Error('Fikk ikke låst opp alt. Koden er ikke byttet.');
+      åpnet.push([rad.dato, innhold]);
+    }
+
+    for (const [dato, innhold] of åpnet) {
+      await db.doc(`dager/${dato}`).update({ skjult: await lås(nyNokkel, innhold) });
+    }
+    await db.doc('oppsett/nokkel').set({ prove: await lås(nyNokkel, PROVE) });
+    nokkel = nyNokkel;
+    return { ok: true, hvem: LYKKE, lastOpp: åpnet.length };
   }
 
   if (sti === '/melding' && metode === 'POST') {

@@ -9,7 +9,7 @@
  * er ett sted å lese for å vite at det stemmer.
  */
 import {
-  COOKIE, lagToken, lesToken, lesCookie, likeStrenger, settCookie, slettCookie,
+  COOKIE, lagKode, lagToken, lesToken, lesCookie, likeStrenger, settCookie, slettCookie, stemmerKode,
 } from './auth.js';
 import {
   dagsnokkel, klokke, minutter, dagerMellom, sisteDager, sammeDagIFjor, norskDato, norskUkedag,
@@ -152,7 +152,14 @@ async function loggInn(req, env) {
   const { hvem, kode } = await req.json().catch(() => ({}));
   const fasit = hvem === LYKKE ? env.KODE_LYKKE : hvem === MATHIAS ? env.KODE_MATHIAS : null;
 
-  if (!fasit || !likeStrenger(kode ?? '', fasit)) {
+  // Er koden byttet inne i appen, er det den som gjelder. Hemmeligheten fra
+  // oppsettet er bare utgangspunktet, ikke fasiten for alltid.
+  const byttet = fasit ? await lesOppsett(env, `kode_${hvem}`) : null;
+  const stemmer = byttet
+    ? await stemmerKode(kode ?? '', byttet)
+    : Boolean(fasit) && likeStrenger(kode ?? '', fasit);
+
+  if (!stemmer) {
     await env.DB.prepare('INSERT INTO forsok (ip, kl) VALUES (?1, ?2)').bind(ip, nå()).run();
     return feil('Feil kode.', 401);
   }
@@ -228,6 +235,7 @@ async function tilstandLykke(env) {
     brev: f.brev.filter((b) => !b.apnet_kl).map(({ id, laget_kl }) => ({ id, laget_kl })),
     behov: f.behov,
     delt: erDelt(env),
+    kan_bytte_egen: true,
   };
 }
 
@@ -260,6 +268,10 @@ async function tilstandMathias(env) {
     sist_skrevet: alle[0]?.dato ?? null,
     behov: f.behov,
     delt,
+    // På serveren er koden bare en nøkkel til døra, ikke til innholdet. Da
+    // kan den settes på nytt uten at noe går tapt.
+    kan_bytte_hennes: true,
+    kan_bytte_egen: true,
   };
 }
 
@@ -533,6 +545,25 @@ async function api(req, env, url, ctx) {
   }
   if (sti === '/glasset') return glasset(env);
   if (sti === '/arkiv') return arkiv(env, hvem, url);
+
+  /**
+   * Bytt kode. Hun kan alltid bytte sin egen. Mathias kan i tillegg sette en
+   * ny for henne – men aldri i det skjulte: hun får en melding om det i
+   * samtalen, slik at en ny kode aldri er en overraskelse.
+   */
+  if (sti === '/kode' && req.method === 'POST') {
+    const mål = kropp?.hvem === LYKKE ? LYKKE : kropp?.hvem === MATHIAS ? MATHIAS : null;
+    const ny = String(kropp?.kode ?? '');
+    if (!mål) return feil('Hvem sin kode?', 400);
+    if (ny.length < 6) return feil('Koden må være minst seks tegn.', 400);
+    if (erLykke && mål !== LYKKE) return feil('Du kan bare bytte din egen kode.', 403);
+
+    await skrivOppsett(env, `kode_${mål}`, await lagKode(ny));
+    if (!erLykke && mål === LYKKE) {
+      await leggMelding(env, MATHIAS, 'Jeg satte en ny kode for deg her i appen.');
+    }
+    return json({ ok: true, hvem: mål });
+  }
   if (sti === '/aarsbok') return arsboka(env, hvem, url);
 
   // Én enkelt dag, for kalenderen. Han får den gjennom det samme filteret.

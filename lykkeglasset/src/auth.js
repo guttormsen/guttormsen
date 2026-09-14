@@ -37,6 +37,40 @@ export function likeStrenger(a = '', b = '') {
   return ulik === 0;
 }
 
+/* ---------- koder ---------- */
+
+const RUNDER = 200000;
+
+async function utled(kode, salt, runder) {
+  const grunn = await crypto.subtle.importKey('raw', ENC.encode(kode), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: runder, hash: 'SHA-256' }, grunn, 256,
+  );
+  return base64url(bits);
+}
+
+/**
+ * Gjør en kode om til noe som kan lagres.
+ *
+ * Kodene begynner som hemmeligheter hos Cloudflare, men de må kunne byttes
+ * uten en maskin med wrangler på. Da må de ligge i databasen – og en kode i
+ * klartekst i en database er en kode på avveie den dagen databasen er det.
+ */
+export async function lagKode(kode) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return `pbkdf2$${RUNDER}$${base64url(salt)}$${await utled(kode, salt, RUNDER)}`;
+}
+
+/** @returns {Promise<boolean>} om koden stemmer med det lagrede. */
+export async function stemmerKode(kode, lagret) {
+  const [merke, runder, salt, fasit] = String(lagret ?? '').split('$');
+  if (merke !== 'pbkdf2' || !runder || !salt || !fasit) return false;
+  const bytes = Uint8Array.from(
+    atob(salt.replaceAll('-', '+').replaceAll('_', '/')), (c) => c.charCodeAt(0),
+  );
+  return likeStrenger(await utled(kode, bytes, Number(runder)), fasit);
+}
+
 /**
  * Lager et token på formen `hvem.utløper.signatur`.
  *

@@ -44,3 +44,26 @@ test('kapselen settes med de flaggene som faktisk beskytter den', () => {
     assert.ok(h.includes(flagg), `mangler ${flagg}`);
   }
 });
+
+/* ---------- koder som kan byttes ---------- */
+
+test('en lagret kode kan sjekkes, men ikke leses', async () => {
+  const { lagKode, stemmerKode } = await import('../src/auth.js');
+  const lagret = await lagKode('sommerfugl');
+  assert.ok(!lagret.includes('sommerfugl'), 'koden skal ikke stå der');
+  assert.equal(await stemmerKode('sommerfugl', lagret), true);
+  assert.equal(await stemmerKode('sommerfug', lagret), false);
+  assert.equal(await stemmerKode('', lagret), false);
+});
+
+test('to like koder får ulikt salt, og dermed ulik lagring', async () => {
+  const { lagKode } = await import('../src/auth.js');
+  assert.notEqual(await lagKode('samme'), await lagKode('samme'));
+});
+
+test('tull i stedet for en lagret kode slipper ingen inn', async () => {
+  const { stemmerKode } = await import('../src/auth.js');
+  for (const rart of [null, '', 'bare-tekst', 'pbkdf2$$$', 'md5$1$a$b']) {
+    assert.equal(await stemmerKode('hva som helst', rart), false);
+  }
+});

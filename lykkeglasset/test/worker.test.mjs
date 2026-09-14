@@ -715,3 +715,54 @@ test('årsboka hans har ikke med de private dagene', async () => {
   const bok = await (await kall(`/aarsbok?ar=${idag.slice(0, 4)}`, { cookie: hans })).json();
   assert.equal(bok.antall, 0);
 });
+
+/* ---------- koder som kan byttes ---------- */
+
+test('hun kan bytte sin egen kode, og den gamle slutter å virke', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await kall('/kode', {
+    metode: 'POST', cookie, kropp: { hvem: 'lykke', kode: 'nytt-passord' },
+  })).status, 200);
+
+  assert.equal((await kall('/logg-inn', {
+    metode: 'POST', kropp: { hvem: 'lykke', kode: 'lykke-kode' },
+  })).status, 401, 'den gamle koden skal være død');
+
+  assert.equal((await kall('/logg-inn', {
+    metode: 'POST', kropp: { hvem: 'lykke', kode: 'nytt-passord' },
+  })).status, 200);
+});
+
+test('Mathias kan sette en ny kode for henne – og hun får vite det', async () => {
+  const hans = await loggInn('mathias');
+  await kall('/kode', { metode: 'POST', cookie: hans, kropp: { hvem: 'lykke', kode: 'ny-kode-til-lykke' } });
+
+  const nyInn = await kall('/logg-inn', { metode: 'POST', kropp: { hvem: 'lykke', kode: 'ny-kode-til-lykke' } });
+  assert.equal(nyInn.status, 200);
+
+  const cookie = nyInn.headers.get('Set-Cookie').split(';')[0];
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.ok(t.meldinger.some((m) => m.tekst.includes('ny kode')), 'hun skal se at det skjedde');
+});
+
+test('hun kan ikke sette hans kode', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await kall('/kode', {
+    metode: 'POST', cookie, kropp: { hvem: 'mathias', kode: 'jeg-tar-over' },
+  })).status, 403);
+});
+
+test('for korte koder avvises', async () => {
+  const cookie = await loggInn('lykke');
+  assert.equal((await kall('/kode', { metode: 'POST', cookie, kropp: { hvem: 'lykke', kode: '1234' } })).status, 400);
+  // …og den gamle virker fortsatt.
+  assert.equal((await kall('/logg-inn', { metode: 'POST', kropp: { hvem: 'lykke', kode: 'lykke-kode' } })).status, 200);
+});
+
+test('koden ligger ikke i klartekst i databasen', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/kode', { metode: 'POST', cookie, kropp: { hvem: 'lykke', kode: 'hemmelig-kode' } });
+  const rad = db.prepare("SELECT verdi FROM oppsett WHERE nokkel = 'kode_lykke'").get();
+  assert.ok(rad.verdi.startsWith('pbkdf2$'));
+  assert.ok(!rad.verdi.includes('hemmelig-kode'));
+});

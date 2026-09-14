@@ -968,7 +968,11 @@ function faneOss(t) {
       el('p', { class: 'stempel', text: 'Brev til en dårlig dag' }),
       el('p', {
         class: 'svak liten', style: 'margin:.5rem 0 .7rem',
-        text: `${t.brev.filter((b) => !b.apnet_kl).length} ligger uåpnet. Hun får tilbud om ett når dagen er tung.`,
+        text: (() => {
+          const n = t.brev.filter((b) => !b.apnet_kl).length;
+          const hvor = n === 0 ? 'Ingen ligger klare' : n === 1 ? 'Ett ligger klart' : `${n} ligger klare`;
+          return `${hvor}. Hun får tilbud om ett når dagen er tung.`;
+        })(),
       }),
       el('textarea', { id: 'brev', placeholder: 'Noe hun skal lese når det er vanskelig …' }),
       el('button', {
@@ -984,7 +988,53 @@ function faneOss(t) {
         el('li', { class: 'liten svak' },
           `${kortDato(b.laget_kl.slice(0, 10))} – ${b.apnet_kl ? `åpnet ${kortDato(b.apnet_kl.slice(0, 10))}` : 'ligger klart'}`))),
     ]),
+
+    kodeKort(t),
   );
+}
+
+/**
+ * Kodekortet.
+ *
+ * Koden må kunne byttes fra telefonen. Ligger den bare som en hemmelighet hos
+ * Cloudflare, må man ha en maskin med utviklerverktøy for å glemme den.
+ */
+function kodeKort(t) {
+  if (!t.kan_bytte_egen && !t.kan_bytte_hennes) return null;
+
+  const bytt = async (hvem, felt) => {
+    const kode = felt.value.trim();
+    if (kode.length < 6) return si('Minst seks tegn.');
+    try {
+      await api('/kode', { metode: 'POST', kropp: { hvem, kode } });
+      felt.value = '';
+      si(hvem === t.hvem ? 'Koden din er byttet.' : 'Ny kode satt for Lykke.');
+    } catch (e) { si(e.message); }
+  };
+
+  const rad = (hvem, merkelapp, knapp) => {
+    const felt = el('input', {
+      type: 'password', id: `kode-${hvem}`, autocomplete: 'new-password', placeholder: 'Minst seks tegn',
+    });
+    felt.addEventListener('keydown', (e) => { if (e.key === 'Enter') bytt(hvem, felt); });
+    return el('div', { style: 'margin-top:.9rem' }, [
+      el('label', { for: `kode-${hvem}`, text: merkelapp }),
+      el('div', { class: 'skrivefelt' }, [
+        felt,
+        el('button', { class: 'hoved', type: 'button', style: 'width:auto;padding-inline:1rem', onclick: () => bytt(hvem, felt), text: knapp }),
+      ]),
+    ]);
+  };
+
+  return el('div', { class: 'kort' }, [
+    el('p', { class: 'stempel', text: 'Koder' }),
+    t.kan_bytte_egen && rad(t.hvem, 'Ny kode for deg selv', 'Bytt'),
+    t.kan_bytte_hennes && t.hvem !== 'lykke' && rad('lykke', 'Ny kode for Lykke', 'Sett'),
+    t.kan_bytte_hennes && t.hvem !== 'lykke' && el('p', {
+      class: 'liten svak', style: 'margin:.7rem 0 0',
+      text: 'Setter du en ny for henne, får hun en melding om det. En kode som byttes i det skjulte, er ikke en kode – det er en lås.',
+    }),
+  ]);
 }
 
 /* ---------- oppstart ---------- */
