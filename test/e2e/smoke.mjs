@@ -818,6 +818,25 @@ try {
       await offlineContext.setOffline(false);
       await offlinePage.waitForTimeout(600);
       check('meldingen forsvinner når nettet er tilbake', await offlinePage.locator('#offline-note').isHidden());
+
+      /*
+       * Rene cache-treff gjorde at en installert app kunne bli stående på
+       * gammel kode. Skallet skal svare fra lageret, men hente ferskt i
+       * bakgrunnen, så endringer kommer fram ved neste åpning.
+       */
+      const refreshed = await offlinePage.evaluate(async () => {
+        const url = new URL('src/js/util.js', location.href).href;
+        const keys = await globalThis.caches.keys();
+        const shell = keys.find((key) => key.startsWith('lykkeligtur-shell-'));
+        if (!shell) return 'ingen skall-cache';
+        const cache = await globalThis.caches.open(shell);
+        await cache.put(url, new Response('// gammel utgave', { headers: { 'content-type': 'text/javascript' } }));
+        await fetch(url);
+        // Bakgrunnshentingen skjer etter at svaret er gitt.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return (await (await cache.match(url)).text()).includes('gammel utgave') ? 'fortsatt gammel' : 'oppdatert';
+      });
+      check('skallet oppdaterer seg selv i bakgrunnen', refreshed === 'oppdatert', refreshed);
     }
     await offlineContext.setOffline(false);
   }

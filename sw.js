@@ -10,7 +10,7 @@
  * Bump denne når appen endres. Gamle lagre slettes da ved aktivering, slik at
  * ingen sitter igjen med en gammel utgave fra forrige besøk.
  */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = `lykkeligtur-shell-${VERSION}`;
 const DATA = `lykkeligtur-data-${VERSION}`;
 
@@ -133,6 +133,31 @@ async function cacheFirst(request, cacheName, limit) {
   return response;
 }
 
+/**
+ * Svarer fra lageret med én gang, og henter en fersk kopi i bakgrunnen.
+ *
+ * Rene cache-treff gjorde at en installert app kunne bli stående på gammel
+ * kode til service workeren selv ble byttet ut. Nå retter den seg selv ved
+ * neste åpning, uansett om versjonsnummeret er bumpet.
+ */
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const hit = await cache.match(request);
+  const fresh = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+  if (hit) {
+    // Oppdateringen går videre i bakgrunnen selv om vi svarer fra lageret.
+    return hit;
+  }
+  const response = await fresh;
+  if (response) return response;
+  throw new Error('Ingen kopi å vise');
+}
+
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   try {
@@ -173,6 +198,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((hit) => hit ?? fetch(request).catch(() => caches.match('index.html'))),
+    staleWhileRevalidate(request, SHELL).catch(() => caches.match('index.html')),
   );
 });

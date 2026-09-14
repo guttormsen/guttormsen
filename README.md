@@ -162,6 +162,11 @@ Er nettet borte, sier appen fra øverst i kartet i stedet for bare å vise en
 tom flate. Selve appen starter uansett – skallet ligger i service workeren, og
 røyktesten kutter nettet og sjekker at den gjør det.
 
+Appens egne filer svarer fra lageret med én gang og hentes ferskt i bakgrunnen
+samtidig. Rene cache-treff gjorde at en installert app kunne bli stående på
+gammel kode helt til service workeren selv ble byttet ut; nå retter den seg
+ved neste åpning.
+
 Flislageret er med vilje **ikke** versjonert. Har du lastet ned kartet for en
 tur, skal det ikke forsvinne fordi appen fikk en oppdatering kvelden før.
 
