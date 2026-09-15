@@ -28,6 +28,13 @@ const LYKKE = 'lykke';
 const MATHIAS = 'mathias';
 const HISTORIKK_DAGER = 400;
 
+/**
+ * Milepælsvarslene låses på denne i stedet for på en dato. Den er ikke en dag,
+ * og det er med vilje: «100 gode ting» skjer én gang, ikke én gang per dato.
+ * Den overlever også at en dag slettes – milepælen er allerede feiret.
+ */
+const MILEPÆLSLÅS = 'alle';
+
 /* ---------- svar ---------- */
 
 const json = (data, status = 200, hoder = {}) =>
@@ -143,6 +150,16 @@ const skrivOppsett = (env, nokkel, verdi) =>
 const leggMelding = (env, fra, tekst) =>
   env.DB.prepare('INSERT INTO meldinger (fra, tekst, laget_kl) VALUES (?1, ?2, ?3)')
     .bind(fra, tekst, nå()).run();
+
+/** Av de id-ene som ble bedt om: de som faktisk ligger og venter på å sendes. */
+async function ventendeVedlegg(env, ider) {
+  const merker = ider.map((_, i) => `?${i + 1}`).join(',');
+  const rader = await env.DB
+    .prepare(`SELECT id FROM filer WHERE melding = 0 AND id IN (${merker})`).bind(...ider).all();
+  const finnes = new Set((rader.results ?? []).map((r) => r.id));
+  // Rekkefølgen hun valgte dem i, ikke den databasen kom på.
+  return ider.filter((id) => finnes.has(id));
+}
 
 /**
  * Samme, men med vedlegg som allerede ligger i lageret og venter (`melding = 0`).
@@ -276,7 +293,9 @@ async function tilstandLykke(env) {
     historikk: alle.map((d) => ({ dato: d.dato, humor: d.humor, privat: d.privat })),
     ifjor: alle.find((d) => d.dato === sammeDagIFjor(f.dato)) ?? null,
     uke: ukesbilde(alle, f.dato),
-    antall_gode_ting: alle.reduce((n, d) => n + d.gode_ting.length, 0),
+    // Alt hun har skrevet, ikke bare det som får plass i historikkvinduet.
+    // Ellers hopper glasset nedover når hun laster appen på nytt.
+    antall_gode_ting: await antallGodeTing(env),
     dager_i_ar: alle.filter((d) => d.dato.startsWith(f.dato.slice(0, 4))).length,
     meldinger: f.meldinger,
     onsker: f.onsker,
@@ -395,18 +414,28 @@ async function lagreDag(kropp, env, ctx) {
   }
 
   // Milepæler telles på alt hun har skrevet, uansett når dagen var.
-  const tall = await env.DB.prepare('SELECT gode_ting FROM dager').all();
-  const antall = (tall.results ?? []).reduce((n, r) => {
+  //
+  // To feller her. Rettes en dag som alt fantes, er det bare forskjellen som
+  // er ny – ikke hele dagen på nytt. Og låsen må være felles for alle datoer:
+  // står den på dagens dato, fyrer den samme milepælen igjen i morgen.
+  const antall = await antallGodeTing(env);
+  const før = antall - r.gode_ting.length + (fraFør?.gode_ting.length ?? 0);
+  const nådd = milepælFor(antall, før);
+  if (nådd) await sendEnGang(env, ctx, `milepel:${nådd}`, MILEPÆLSLÅS, milepæl(nådd), false);
+
+  return json({ dag, sendt: sendteNå, var_ny: !fraFør, antall_gode_ting: antall });
+}
+
+/** Alt hun har skrevet, talt opp. Tabellen er liten nok til å leses helt. */
+async function antallGodeTing(env) {
+  const rader = await env.DB.prepare('SELECT gode_ting FROM dager').all();
+  return (rader.results ?? []).reduce((n, r) => {
     try {
       return n + JSON.parse(r.gode_ting || '[]').length;
     } catch {
       return n;
     }
   }, 0);
-  const nådd = milepælFor(antall, antall - r.gode_ting.length);
-  if (nådd) await sendEnGang(env, ctx, `milepel:${nådd}`, dato, milepæl(nådd), false);
-
-  return json({ dag, sendt: sendteNå, var_ny: !fraFør, antall_gode_ting: antall });
 }
 
 /** Én tilfeldig god ting fra før i tiden. Helst noe hun har rukket å glemme. */
@@ -554,7 +583,10 @@ async function lagreBytes(env, { data, dato, slag, type, melding }) {
 async function lagreFil(req, env, ctx, url) {
   const dato = url.searchParams.get('dato') || idag(env);
   const slag = url.searchParams.get('slag') === 'lyd' ? 'lyd' : 'bilde';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
+  // Samme grense som for dagene selv: bakover så langt man vil, aldri framover.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato) || dagerMellom(dato, idag(env)) < 0) {
+    return feil('Ugyldig dato.', 400);
+  }
 
   const lagret = await taImotFil(req, env, dato, slag, null);
   if (lagret.feil) return feil(lagret.feil, lagret.status);
@@ -745,7 +777,13 @@ async function tekstSammendrag(env, periode) {
 /** Hvor langt hun er kommet i sin egen spørsmålsliste. */
 async function tekstSporsmal(env) {
   const d = await (await sporsmalslista(env, new URL('https://x/'))).json();
-  return sporsmalstekst(d);
+  const svar = await svarene(env);
+  const perKategori = {};
+  for (const nokkel of Object.keys(KATEGORIER)) {
+    const i = LISTA.filter((spm) => spm.kat === nokkel);
+    perKategori[nokkel] = { alle: i.length, ferdig: i.filter((spm) => svar.has(spm.k)).length };
+  }
+  return sporsmalstekst({ ...d, perKategori });
 }
 
 /** Ønskelista, med en knapp per ting så den kan hukes av herfra. */
@@ -1322,8 +1360,13 @@ async function api(req, env, url, ctx) {
 
   if (sti === '/melding' && req.method === 'POST') {
     const tekst = tekstFra('tekst', 2000);
-    const vedlegg = (Array.isArray(kropp?.filer) ? kropp.filer : []).slice(0, 6).map(String);
-    if (!tekst && !vedlegg.length) return feil('Tom melding.', 400);
+    const bedt = [...new Set((Array.isArray(kropp?.filer) ? kropp.filer : []).map(String))].slice(0, 6);
+    // Bare vedlegg som faktisk ligger og venter, teller. Ellers ville en id
+    // som var ryddet bort blitt til en melding som bare sier 📷 og ikke viser noe.
+    const vedlegg = bedt.length ? await ventendeVedlegg(env, bedt) : [];
+    if (!tekst && !vedlegg.length) {
+      return feil(bedt.length ? 'Vedleggene er ikke der lenger. Legg dem ved på nytt.' : 'Tom melding.', 400);
+    }
     await leggMeldingMedVedlegg(env, hvem, tekst || '📷', vedlegg);
 
     if (vedlegg.length) {

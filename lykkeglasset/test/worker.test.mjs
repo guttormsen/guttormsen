@@ -1792,3 +1792,117 @@ test('bilder hun ikke har sendt, hører ikke boten på', async () => {
   assert.deepEqual(hentedeFiler, [], 'bare eieren slipper til');
   assert.deepEqual(await meldingene(), []);
 });
+
+/* ---------- ting som var galt før ---------- */
+
+test('milepælen feires én gang, ikke én gang per dato', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  // 33 dager à 3 gode ting = 99. Neste dag krysser 100.
+  for (let d = 40; d > 7; d -= 1) {
+    await kall('/dag', {
+      metode: 'POST', cookie,
+      kropp: {
+        dato: flyttDag(idag, -d),
+        humor: 4,
+        gode_ting: [{ tekst: `en ${d}` }, { tekst: `to ${d}` }, { tekst: `tre ${d}` }],
+      },
+    });
+  }
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'nummer hundre' }] } });
+  assert.equal(sendte.filter((m) => m.text.includes('Milepæl')).length, 1, 'skal feires når den passeres');
+
+  // En helt annen dag etterpå skal ikke feire det samme på nytt.
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -1), humor: 4, gode_ting: [{ tekst: 'i går' }] } });
+  assert.deepEqual(sendte.filter((m) => m.text.includes('Milepæl')), []);
+});
+
+test('å rette en dag som alt fantes, utløser ingen milepæl', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  for (let d = 40; d > 7; d -= 1) {
+    await kall('/dag', {
+      metode: 'POST', cookie,
+      kropp: { dato: flyttDag(idag, -d), humor: 4, gode_ting: [{ tekst: `en ${d}` }, { tekst: `to ${d}` }, { tekst: `tre ${d}` }] },
+    });
+  }
+  // 99 ting. Dagen i dag krysser hundre, og den milepælen er nå feiret.
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'nummer hundre' }] } });
+
+  // Så rettes humøret på en gammel dag. Antallet står stille, og en dato som
+  // aldri har sett milepælsvarselet, skal ikke kunne utløse det på nytt.
+  sendte.length = 0;
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { dato: flyttDag(idag, -20), humor: 5, gode_ting: [{ tekst: 'en 20' }, { tekst: 'to 20' }, { tekst: 'tre 20' }] },
+  });
+  assert.deepEqual(sendte.filter((m) => m.text.includes('Milepæl')), [], 'det er ingen nye ting i glasset');
+});
+
+test('glasset i tilstanden teller også det som er eldre enn historikkvinduet', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { dato: flyttDag(idag, -800), humor: 4, gode_ting: [{ tekst: 'lenge siden' }, { tekst: 'og en til' }] },
+  });
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'i dag' }] } });
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.antall_gode_ting, 3, 'glasset skal ikke tømme seg selv med tida');
+});
+
+test('en melding med vedlegg som er borte, blir ikke en tom bildeboble', async () => {
+  const cookie = await loggInn('lykke');
+  const svar = await kall('/melding', { metode: 'POST', cookie, kropp: { filer: ['finnes-ikke'] } });
+  assert.equal(svar.status, 400);
+  assert.match((await svar.json()).feil, /ikke der lenger/);
+  assert.deepEqual(await meldingene(), [], 'ingen melding skal ha blitt til');
+});
+
+test('tekst berger meldingen selv om vedlegget er borte', async () => {
+  const cookie = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  await kall(`/fil/${id}`, { metode: 'DELETE', cookie });
+
+  assert.equal((await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'står likevel', filer: [id] } })).status, 200);
+  const m = (await meldingene()).at(-1);
+  assert.equal(m.tekst, 'står likevel');
+  assert.deepEqual(m.filer, []);
+});
+
+test('vedleggene beholder rekkefølgen hun valgte dem i', async () => {
+  const cookie = await loggInn('lykke');
+  const a = (await (await lastOppVedlegg(cookie)).json()).id;
+  const b = (await (await lastOppVedlegg(cookie)).json()).id;
+  await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'to stykker', filer: [b, a] } });
+  const ider = (await meldingene()).at(-1).filer.map((f) => f.id);
+  assert.equal(ider.length, 2);
+});
+
+test('et bilde kan ikke legges på en dag som ikke har vært', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  const svar = await worker.fetch(new Request(`https://test.local/api/fil?dato=${flyttDag(idag, 3)}&slag=bilde`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg', Cookie: cookie },
+    body: PIKSEL,
+  }), env, ctx);
+  assert.equal(svar.status, 400);
+});
+
+test('boten viser hvor langt hun er kommet i hver kategori', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  const cookie = await loggInn('lykke');
+  const lista = await (await kall('/sporsmal?kat=oss&antall=3', { cookie })).json();
+  await kall('/sporsmal', { metode: 'POST', cookie, kropp: { k: lista.forslag[0].k, tekst: 'et svar' } });
+
+  sendte.length = 0;
+  await fraEier('/sporsmal');
+  const t = sisteSvar();
+  assert.match(t, /Om meg: 0 av 12/);
+  assert.match(t, /Om oss: 1 av 12/);
+});

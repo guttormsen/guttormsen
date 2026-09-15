@@ -727,6 +727,8 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 .glass .skinn { animation: blink 6s ease-in-out infinite; }
 @keyframes blink { 0%, 100% { opacity: .5; } 50% { opacity: .85; } }
 
+.frakoblet-glass { width: 84px; opacity: .55; }
+
 .glass-rad { display: flex; align-items: center; gap: 1.1rem; }
 .glass-rad .glass { width: 74px; }
 

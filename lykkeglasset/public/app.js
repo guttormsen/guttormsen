@@ -7,7 +7,26 @@
  * Fila kjenner ikke til hvor dataene kommer fra. Alt går gjennom `api()` i
  * api.js, og den kan byttes ut uten at noe her endres.
  */
-import { api, lastOpp, hentFil, VARSLER, KAN_FILER } from './api.js';
+import { api as serveren, lastOpp as lastOppRått, hentFil, VARSLER, KAN_FILER } from './api.js';
+
+/**
+ * Alt som går til serveren, går gjennom denne.
+ *
+ * Én ting håndteres her og ingen andre steder: at økta har gått ut. Det er
+ * ikke en feil hun har gjort, og det hjelper henne ikke å få «Ikke logget inn»
+ * som en liten svart boble på en skjerm som ellers ser levende ut – hun skal
+ * få kodefeltet, og en setning om hvorfor.
+ */
+const påØktSlutt = (feil) => {
+  if (feil?.status === 401 && tilstand) {
+    tilstand = null;
+    visLoggInn('Økta gikk ut. Lukk opp igjen, så er du inne.');
+  }
+  throw feil;
+};
+
+const api = (sti, valg) => serveren(sti, valg).catch(påØktSlutt);
+const lastOpp = (sti, data, type) => lastOppRått(sti, data, type).catch(påØktSlutt);
 
 const REAKSJONER = ['❤️', '😂', '🥹', '✨'];
 
@@ -90,6 +109,9 @@ const HUMOR = [
   { verdi: 4, fjes: '🙂', ord: 'God' },
   { verdi: 5, fjes: '😄', ord: 'Skikkelig god' },
 ];
+/** Norsk desimaltegn. «3.0 i snitt» er engelsk og ser lånt ut. */
+const enDesimal = (n) => n.toFixed(1).replace('.', ',');
+
 const humorOrd = (n) => HUMOR.find((h) => h.verdi === n)?.ord ?? '';
 const humorFjes = (n) => HUMOR.find((h) => h.verdi === n)?.fjes ?? '';
 
@@ -133,12 +155,30 @@ const PLASSER = [
 ];
 const FARGER = ['#e0806a', '#f0a92f', '#cf9a4e', '#d9835f', '#e6b85c'];
 
+// Samme milepæler som serveren feirer. Glasset fylles mot den neste av dem.
+const MILEPÆLER = [100, 250, 500, 1000, 2500, 5000];
+
+/** Hvor hun er på vei, og hvor langt hun er kommet dit. */
+function glassnivå(antall) {
+  const mål = MILEPÆLER.find((m) => antall < m) ?? null;
+  if (mål === null) return { mål: null, andel: 1 };
+  const forrige = MILEPÆLER[MILEPÆLER.indexOf(mål) - 1] ?? 0;
+  return { mål, andel: (antall - forrige) / (mål - forrige) };
+}
+
 /**
- * Krukka, med så mange ting oppi som hun har skrevet. Ett lag per tretti, så
- * den ikke er full etter en uke.
+ * Krukka, med så mange ting oppi som hun har skrevet.
+ *
+ * Før fyltes den med én kule per tretti ting, og da sto den bom full for
+ * alltid etter fire hundre og femti. Appen skal vare i år. Nå fylles den mot
+ * neste milepæl og begynner på nytt når den er nådd – et nytt glass, som seg
+ * hør og bør når det forrige er fullt.
  */
 function glassFigur(antall = 0, klasse = 'glass') {
-  const n = Math.max(0, Math.min(PLASSER.length, Math.ceil(antall / 30)));
+  const { mål, andel } = glassnivå(antall);
+  const n = antall
+    ? Math.max(1, Math.min(PLASSER.length, Math.round(PLASSER.length * andel)))
+    : 0;
   const innhold = svg('g', { class: 'innhold' }, PLASSER.slice(0, n).map(([x, y], i) => {
     const sirkel = svg('circle', {
       cx: x, cy: y, r: i % 3 === 1 ? 7 : 8, fill: FARGER[i % FARGER.length],
@@ -149,7 +189,9 @@ function glassFigur(antall = 0, klasse = 'glass') {
 
   return svg('svg', {
     class: klasse, viewBox: '0 0 100 132', role: 'img',
-    'aria-label': antall ? `Glasset, med ${antall} gode ting i` : 'Et tomt glass',
+    'aria-label': antall
+      ? `Glasset, med ${antall} gode ting i${mål ? `. Neste milepæl er ${mål}.` : ''}`
+      : 'Et tomt glass',
   }, [
     svg('rect', { x: 30, y: 4, width: 40, height: 13, rx: 5, fill: 'var(--lokk)' }),
     svg('rect', { x: 35, y: 15, width: 30, height: 9, fill: 'var(--lokk)', opacity: '.5' }),
@@ -256,6 +298,37 @@ function visLoggInn(feilmelding) {
 
 /* ---------- kveldsrunden ---------- */
 
+/**
+ * Kveldsrunden mellom to økter.
+ *
+ * Hun skriver den på sofaen, med dårlig dekning og en telefon som gjerne
+ * kaster fanen når hun bytter app. Da skal ikke tre gode ting være borte.
+ * Utkastet ligger her til dagen faktisk er lagret, og bare da.
+ *
+ * Det ligger lokalt på hennes egen telefon og når hverken serveren eller ham.
+ */
+const UTKASTNØKKEL = (dato) => `lykkeglasset:utkast:${dato}`;
+
+function lesUtkast(dato) {
+  try {
+    const rå = localStorage.getItem(UTKASTNØKKEL(dato));
+    return rå ? JSON.parse(rå) : null;
+  } catch { return null; }
+}
+
+function skrivUtkast(dato, utkast) {
+  try { localStorage.setItem(UTKASTNØKKEL(dato), JSON.stringify(utkast)); } catch { /* fullt eller avslått */ }
+}
+
+function glemUtkast(dato) {
+  try { localStorage.removeItem(UTKASTNØKKEL(dato)); } catch { /* samme sak */ }
+}
+
+/** Har hun skrevet noe i det hele tatt? Et tomt utkast er ikke verdt å tilby. */
+const noeIUtkastet = (u) => Boolean(
+  u && (u.humor || u.gode?.some((g) => g.trim()) || u.tungt?.trim() || u.svar?.trim() || u.behov),
+);
+
 function gjenskinn(verdi) {
   if (rolig()) return;
   const lag = el('div', { class: 'gjenskinn' });
@@ -288,13 +361,50 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
     privat: fra ? fra.privat : false,
   };
 
+  // Slik dagen står på serveren. Alt som måles mot denne, er det hun har
+  // skrevet siden – og bare det er verdt å kalle et ulagret utkast.
+  const utgangspunkt = JSON.stringify(utkast);
+
+  // Lot hun appen ligge midt i runden, tar vi opp tråden der den lå.
+  const liggende = lesUtkast(dato);
+  const gjenopptatt = noeIUtkastet(liggende) && JSON.stringify(liggende) !== utgangspunkt;
+  if (gjenopptatt) Object.assign(utkast, liggende);
+
   let steg = 0;
+
+  // Et tastetrykk er ikke verdt en skriving hver gang, men fire hundre
+  // millisekunder uten én er. I tillegg lagres det når telefonen tar fanen –
+  // det er der utkast pleier å forsvinne.
+  let utkastTid;
+  // Å åpne en dag og lukke den igjen skal ikke etterlate et «du hadde noe
+  // ulagret» neste gang. Er ingenting endret, skal det ikke ligge noe her.
+  const taVare = () => {
+    if (JSON.stringify(utkast) === utgangspunkt) glemUtkast(dato);
+    else skrivUtkast(dato, utkast);
+  };
+  const merkEndring = () => {
+    clearTimeout(utkastTid);
+    utkastTid = setTimeout(taVare, 400);
+  };
+  const påBort = () => taVare();
+  document.addEventListener('visibilitychange', påBort);
+  window.addEventListener('pagehide', påBort);
+  const slutt = () => {
+    clearTimeout(utkastTid);
+    document.removeEventListener('visibilitychange', påBort);
+    window.removeEventListener('pagehide', påBort);
+  };
+  const ut = () => { slutt(); ferdig(); };
+
   fanerad.replaceChildren();
   // Si fra at hun er i gang. Det er den ene hendelsen serveren ikke kan se selv.
   api('/hendelse', { metode: 'POST', kropp: { slag: 'begynt' } }).catch(() => {});
 
-  const ramme = (tittel, undertittel, innhold, { videre = 'Videre', kanVidere = true, siste = false } = {}) =>
-    tegn(el('div', { class: 'steg' }, [
+  const ramme = (tittel, undertittel, innhold, { videre = 'Videre', kanVidere = true, siste = false } = {}) => {
+    // Hvert stegbytte er et lagringspunkt. Feltene skriver rett i `utkast`,
+    // så det som står her er det hun faktisk har skrevet.
+    taVare();
+    return tegn(el('div', { class: 'steg' }, [
       el('div', { class: 'framdrift' }, [0, 1, 2, 3].map((i) => el('i', { 'data-pa': i <= steg ? 'ja' : 'nei' }))),
       el('p', { class: 'stempel', text: gammel ? `${datoOrd(dato)} · steg ${steg + 1} av 4` : `Steg ${steg + 1} av 4` }),
       el('h1', { text: tittel }),
@@ -308,11 +418,12 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
         }),
         el('button', {
           class: 'blank', type: 'button',
-          onclick: () => (steg === 0 ? ferdig() : (steg -= 1, vis())),
+          onclick: () => (steg === 0 ? ut() : (steg -= 1, vis())),
           text: steg === 0 ? 'Avbryt' : 'Tilbake',
         }),
       ]),
     ]));
+  };
 
   const stegHumor = () => {
     const knapper = HUMOR.map((h) =>
@@ -331,7 +442,9 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
       }, [h.fjes, el('span', { text: h.ord })]));
     ramme(
       gammel ? 'Hvordan var den dagen?' : 'Hvordan var dagen?',
-      gammel ? 'Du fyller ut en dag som har vært. Mathias får én stille beskjed om det, ikke et varsel.' : datoOrd(dato),
+      gjenopptatt
+        ? 'Du hadde noe ulagret liggende her. Det står slik du forlot det.'
+        : (gammel ? 'Du fyller ut en dag som har vært. Mathias får én stille beskjed om det, ikke et varsel.' : datoOrd(dato)),
       [el('div', { class: 'humor' }, knapper)],
       { kanVidere: Boolean(utkast.humor) },
     );
@@ -344,7 +457,7 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
       const inn = voksende(el('textarea', {
         class: 'vokser', rows: 1, value: utkast.gode[i], id: `god-${i}`,
         placeholder: ['Noe som var fint …', 'Noe mer …', 'Og én til …'][i],
-        oninput: (e) => { utkast.gode[i] = e.target.value; },
+        oninput: (e) => { utkast.gode[i] = e.target.value; merkEndring(); },
       }));
       inn.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' || e.shiftKey) return;
@@ -357,7 +470,7 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
         el('label', { class: 'hake' }, [
           el('input', {
             type: 'checkbox', checked: utkast.omOss[i],
-            onchange: (e) => { utkast.omOss[i] = e.target.checked; },
+            onchange: (e) => { utkast.omOss[i] = e.target.checked; merkEndring(); },
           }),
           el('span', { text: 'Dette handler om oss' }),
         ]),
@@ -374,13 +487,13 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
       voksende(el('textarea', {
         class: 'vokser', value: utkast.svar, id: 'svar', rows: 2,
         placeholder: 'Skriv om du vil …',
-        oninput: (e) => { utkast.svar = e.target.value; },
+        oninput: (e) => { utkast.svar = e.target.value; merkEndring(); },
       })),
       el('label', { for: 'tungt', style: 'margin-top:1.2rem', text: 'Var noe tungt i dag?' }),
       el('textarea', {
         value: utkast.tungt, id: 'tungt', rows: 3,
         placeholder: 'Dette er ditt. Det deles bare hvis du sier fra.',
-        oninput: (e) => { utkast.tungt = e.target.value; },
+        oninput: (e) => { utkast.tungt = e.target.value; merkEndring(); },
       }),
     ]);
   };
@@ -434,10 +547,16 @@ async function kveldsrunden(t, ferdig, dato = t.dato) {
           privat: utkast.privat,
         },
       });
+      // Først nå er det trygt å glemme utkastet.
+      glemUtkast(dato);
       si(svar.sendt.length ? 'Lagret. Mathias fikk beskjed.' : 'Lagret.');
-      ferdig();
+      ut();
     } catch (e) {
-      si(e.message);
+      // Utkastet blir liggende. Sier hun fra om det, slipper hun å lure på
+      // om tre gode ting forsvant sammen med feilmeldingen.
+      skrivUtkast(dato, utkast);
+
+      si(e.frakoblet ? `${e.message} Det du skrev står trygt her.` : e.message);
     }
   };
 
@@ -540,6 +659,7 @@ function arkbunn(dag) {
       slett.disabled = true;
       try {
         await api(`/dag?dato=${dag.dato}`, { metode: 'DELETE' });
+        glemUtkast(dag.dato);
         valgtDag = null;
         si(`${datoOrd(dag.dato)} er slettet.`);
         await start();
@@ -843,7 +963,7 @@ function faneIdag(t) {
       el('p', { class: 'stempel', text: 'Sju siste dagene' }),
       el('div', { class: 'tall-rad', style: 'margin-top:.7rem' }, [
         el('div', { class: 'tall-rute' }, [
-          el('b', { class: 'tall', text: u.snitt == null ? '–' : u.snitt.toFixed(1) }),
+          el('b', { class: 'tall', text: u.snitt == null ? '–' : enDesimal(u.snitt) }),
           el('span', { text: 'i snitt av 5' }),
         ]),
         el('div', { class: 'tall-rute' }, [
@@ -860,8 +980,8 @@ function faneIdag(t) {
         'data-vei': retning > 0 ? 'opp' : 'ned',
         style: 'margin:.8rem 0 0',
         text: retning > 0
-          ? `↑ ${retning.toFixed(1)} bedre enn uka før`
-          : `↓ ${Math.abs(retning).toFixed(1)} tyngre enn uka før`,
+          ? `↑ ${enDesimal(retning)} bedre enn uka før`
+          : `↓ ${enDesimal(Math.abs(retning))} tyngre enn uka før`,
       }),
       u.behov.length > 0 && el('p', { class: 'liten svak', style: 'margin:.6rem 0 0' }, [
         'Hun har bedt om: ',
@@ -1048,7 +1168,7 @@ function sammendragSeksjon(t) {
       rute.replaceChildren(...(d.ført ? [
         el('div', { class: 'tall-rad' }, [
           el('div', { class: 'tall-rute' }, [
-            el('b', { class: 'tall', text: d.snitt == null ? '–' : d.snitt.toFixed(1).replace('.', ',') }),
+            el('b', { class: 'tall', text: d.snitt == null ? '–' : enDesimal(d.snitt) }),
             el('span', { text: 'i snitt av 5' }),
           ]),
           el('div', { class: 'tall-rute' }, [
@@ -1188,13 +1308,18 @@ function faneGlasset(t) {
         tall,
         el('span', { class: 'svak', style: 'margin-left:.4rem', text: erLykke ? 'gode ting skrevet' : 'ting om oss' }),
       ]),
-      erLykke && el('p', { class: 'liten svak midt', text: `${t.dager_i_ar} dager ført i år · ett lag i glasset per tretti ting` }),
+      erLykke && el('p', {
+        class: 'liten svak midt',
+        text: glassnivå(antall).mål
+          ? `${t.dager_i_ar} dager ført i år · ${glassnivå(antall).mål - antall} igjen til neste milepæl`
+          : `${t.dager_i_ar} dager ført i år · glasset er fullt`,
+      }),
       el('button', {
         class: 'hoved', type: 'button', style: 'margin-top:1rem', text: 'Trekk en lapp',
         onclick: async () => {
           try {
             const g = await api(`/glasset${forrigeLapp ? `?forrige=${encodeURIComponent(forrigeLapp)}` : ''}`);
-          forrigeLapp = g.tekst ?? null;
+            forrigeLapp = g.tekst ?? null;
             lapperute.replaceChildren(g.tom
               ? el('p', { class: 'svak liten', style: 'margin:.9rem 0 0', text: 'Glasset er tomt ennå. Det fyller seg opp.' })
               : el('div', { class: 'lapp' }, [`«${g.tekst}»`, el('span', { class: 'når', text: g.når })]));
@@ -1672,9 +1797,36 @@ async function start() {
     const { hvem } = await api('/meg');
     if (!hvem) return visLoggInn();
     visApp(await api('/tilstand'));
-  } catch {
+  } catch (feil) {
+    // Uten dekning er hun ikke logget ut. Å kaste henne til kodefeltet i
+    // heisen ville vært å be om koden for noe som ikke er låst.
+    if (feil.frakoblet) return visFrakoblet();
     visLoggInn();
   }
+}
+
+/** Når serveren ikke svarer. Ikke en feilmelding – en ting å prøve igjen. */
+function visFrakoblet() {
+  fanerad.replaceChildren();
+  const knapp = el('button', {
+    class: 'hoved', type: 'button', style: 'margin-top:1.2rem',
+    onclick: async () => {
+      knapp.disabled = true;
+      knapp.textContent = 'Prøver …';
+      await start();
+      knapp.disabled = false;
+      knapp.textContent = 'Prøv igjen';
+    },
+    text: 'Prøv igjen',
+  });
+  tegn(el('div', { class: 'kort løftet midt', style: 'margin-top:20vh' }, [
+    glassFigur(0, 'glass frakoblet-glass'),
+    el('h2', { style: 'margin-top:.6rem', text: 'Får ikke kontakt' }),
+    el('p', { class: 'svak liten', text: 'Telefonen er uten nett, eller serveren sover. Alt du har skrevet står trygt.' }),
+    knapp,
+  ]));
+  // Kommer nettet tilbake av seg selv, skal hun slippe å trykke.
+  window.addEventListener('online', () => start(), { once: true });
 }
 
 start();

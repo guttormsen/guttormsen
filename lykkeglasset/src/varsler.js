@@ -213,10 +213,22 @@ export function sammendragstekst(d, behovTabell = BEHOV) {
 
 const norskDatoKort = (n) => `${Number(n.slice(8))}.${Number(n.slice(5, 7))}.`;
 
-/** Hvor langt hun er kommet i spørsmålslista, og det siste hun har svart. */
-export function sporsmalstekst({ ferdig, igjen, svarte }) {
+/**
+ * Hvor langt hun er kommet i spørsmålslista, og det siste hun har svart.
+ *
+ * Appen deler lista i kategorier, så den gjør boten også. Ellers står det
+ * bare ett tall her, og det sier ingenting om hva hun har lyst til å tenke på.
+ */
+export function sporsmalstekst({ ferdig, igjen, svarte, perKategori = null }) {
   const linjer = [`📝 Lykke har svart på ${ferdig} av ${ferdig + igjen} spørsmål.`];
-  if (!svarte.length) return `${linjer[0]}\n\nIngen svar ennå.`;
+  if (perKategori) {
+    linjer.push('');
+    for (const [nokkel, navn] of Object.entries(KATEGORIER)) {
+      const k = perKategori[nokkel];
+      if (k) linjer.push(`  ${navn}: ${k.ferdig} av ${k.alle}`);
+    }
+  }
+  if (!svarte.length) return `${linjer.join('\n')}\n\nIngen svar ennå.`;
   for (const s of svarte.slice(0, 3)) {
     linjer.push('', s.t, `  «${s.svar}»`);
   }
