@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dagbok</title>
+<meta name="description" content="Kveldsrunden.">
+<!-- Siden skal ikke kunne søkes opp. Den finnes for to personer. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#17120e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fdf7ee" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dagbok">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="ikoner/glass.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="ikoner/ikon-180.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="himmel" aria-hidden="true"><i></i><i></i></div>
+  <div id="skall">
+    <main id="app" aria-live="polite">
+      <p class="laster">Åpner glasset …</p>
+    </main>
+    <nav id="faner" aria-label="Deler av appen"></nav>
+  </div>
+  <div id="brodske" class="brodske" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

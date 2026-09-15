@@ -1,0 +1,61 @@
+# Cloudflare Worker: serverer appen og API-et fra samme adresse.
+#
+# Ingenting hemmelig hører hjemme i denne fila. Token, koder og sesjonsnøkkel
+# settes med `wrangler secret put` – se README.
+
+name = "dagbok"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+# Appen skal ha én adresse, ikke én per versjon. Forhåndsvisnings-URL-ene er
+# offentlige, og en privat dagbok har ingenting der å gjøre.
+preview_urls = false
+
+# Tjenesten er tatt av nett. Den lever videre med hemmeligheter, database og
+# cron, men svarer ikke på noen adresse. Sett denne til true igjen for å åpne.
+workers_dev = false
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dagbok"
+# Fylles inn av `npm run db:opprett`.
+database_id = "66cbb8e7-9245-428a-8ef9-5830a1b5116f"
+
+# Bilder og lydklipp. KV i stedet for R2, fordi R2 må skrus på med kort –
+# og et bilde per dag holder seg godt innenfor gratisgrensa på 1 GB.
+[[kv_namespaces]]
+binding = "FILER"
+id = "31601d0fbb234b41a5f4225d8b0af012"
+
+[vars]
+# Telegram-gruppa varslene går til. Ingen hemmelighet – uten token er den ubrukelig.
+TELEGRAM_CHAT_ID = "-5144581203"
+TIDSSONE = "Europe/Oslo"
+# Når appen minner om kveldsrunden hvis dagen ikke er fylt ut (norsk tid).
+PAMINNELSE_KL = "21:30"
+# Slå av påminnelsen ved å sette denne til "nei".
+PAMINNELSE = "ja"
+# Utgangspunktet før noe er valgt. Bryteren står i appen, under Oss →
+# Deling, og valget forfatterens går foran denne.
+DELT_MODUS = "nei"
+# Si fra på Telegram om det forfatteren gjør: logger inn, begynner på kveldsrunden,
+# leser meldinger, huker av ønsker, snur delingen. Alt stille, utenom det som
+# endrer hva du får se.
+AKTIV_VARSEL = "ja"
+# Hvor ofte «forfatteren er inne i appen» kan gjenta seg, i minutter.
+AKTIV_MINUTTER = "30"
+# Morgenen etter en tung kveld kommer beskjeden på nytt, når den kan brukes.
+MORGEN_KL = "08:00"
+# Uka samlet, søndag kveld.
+UKEBREV_KL = "20:00"
+# Hvor langt tilbake en dag kan fylles ut i etterkant, i dager.
+MAKS_TILBAKE = "3650"
+
+# Halvtimesticket brukes bare til å se om klokka har passert påminnelsestiden
+# i norsk tid. Cron kjører i UTC og kan ikke selv vite om det er sommertid.
+[triggers]
+crons = ["0,30 * * * *"]
