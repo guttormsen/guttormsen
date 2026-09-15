@@ -84,7 +84,11 @@ beforeEach(() => {
       get: async (n) => lager.get(n) ?? null,
       delete: async (n) => { lager.delete(n); },
     },
-    ASSETS: { fetch: async () => new Response('skall') },
+    ASSETS: {
+      fetch: async (req) => (String(req.url).endsWith('/stengt.html')
+        ? new Response('<h1>Stengt</h1>', { headers: { 'Content-Type': 'text/html' } })
+        : new Response('skall')),
+    },
     KODE_FORFATTER: 'forfatter-kode',
     KODE_LESER: 'leser-kode',
     SESJON_HEMMELIG: 'test-hemmelighet',
@@ -1905,4 +1909,93 @@ test('boten viser hvor langt forfatteren er kommet i hver kategori', async () =>
   const t = sisteSvar();
   assert.match(t, /Om meg: 0 av 12/);
   assert.match(t, /Om folk: 1 av 12/);
+});
+
+/* ---------- stengt ---------- */
+
+const side = (sti = '/') => worker.fetch(new Request(`https://test.local${sti}`, {
+  headers: { Accept: 'text/html,application/xhtml+xml', 'Sec-Fetch-Mode': 'navigate' },
+}), env, ctx);
+
+const eiendel = (sti) => worker.fetch(new Request(`https://test.local${sti}`, {
+  headers: { Accept: '*/*', 'Sec-Fetch-Mode': 'no-cors' },
+}), env, ctx);
+
+test('åpen app serverer skallet som før', async () => {
+  assert.equal(env.STENGT, undefined);
+  assert.equal((await side()).status, 200);
+  assert.equal((await eiendel('/app.js')).status, 200);
+});
+
+test('stengt: siden svarer 410 med skiltet', async () => {
+  env.STENGT = 'ja';
+  const svar = await side();
+  assert.equal(svar.status, 410, '410 Gone – ikke en feil som går over');
+  assert.match(svar.headers.get('Content-Type'), /text\/html/);
+  assert.equal(svar.headers.get('Cache-Control'), 'no-store');
+  assert.match(await svar.text(), /Stengt/);
+});
+
+test('stengt: filene til appen svarer 410, så service workeren rydder seg bort', async () => {
+  env.STENGT = 'ja';
+  const svar = await eiendel('/app.js');
+  assert.equal(svar.status, 410);
+  assert.match(svar.headers.get('Content-Type'), /text\/plain/);
+});
+
+test('stengt: API-et stenger før innlogging', async () => {
+  // Cookien lages mens appen er åpen, som om noen satt inne da den ble stengt.
+  const cookie = await loggInn('forfatter');
+  env.STENGT = 'ja';
+
+  for (const [sti, valg] of [
+    ['/tilstand', { cookie }],
+    ['/meg', { cookie }],
+    ['/dag', { metode: 'POST', cookie, kropp: { humor: 4 } }],
+    ['/melding', { metode: 'POST', cookie, kropp: { tekst: 'hei' } }],
+    ['/glasset', { cookie }],
+    ['/eksport', { cookie }],
+  ]) {
+    const svar = await kall(sti, valg);
+    assert.equal(svar.status, 410, `${sti} skal være stengt`);
+    assert.equal((await svar.json()).feil, 'Stengt.');
+  }
+
+  // Heller ikke å logge inn på nytt.
+  assert.equal((await kall('/logg-inn', { metode: 'POST', kropp: { hvem: 'forfatter', kode: 'forfatter-kode' } })).status, 410);
+});
+
+test('stengt: ingenting ble skrevet mens den var stengt', async () => {
+  const cookie = await loggInn('forfatter');
+  env.STENGT = 'ja';
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 5, gode_ting: [{ tekst: 'slipper ikke inn' }] } });
+  env.STENGT = 'nei';
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(t.idag, null);
+  assert.equal(t.antall_gode_ting, 0);
+});
+
+test('stengt: webhooken fra Telegram slipper heller ikke inn', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  env.STENGT = 'ja';
+  assert.equal((await oppdatering({ message: { from: { id: EIER }, chat: { id: -1 }, text: '/meny' } })).status, 410);
+  assert.deepEqual(sendte, []);
+});
+
+test('stengt: klokka tier – ingen påminnelse, ingen ukesbrev', async () => {
+  env.STENGT = 'ja';
+  sendte.length = 0;
+  await kjørKlokka({ scheduledTime: iDagKl('21:35') });
+  assert.deepEqual(sendte, []);
+});
+
+test('å åpne igjen er én verdi, og alt er som før', async () => {
+  env.STENGT = 'ja';
+  assert.equal((await side()).status, 410);
+
+  env.STENGT = 'nei';
+  assert.equal((await side()).status, 200);
+  const cookie = await loggInn('forfatter');
+  assert.equal((await kall('/tilstand', { cookie })).status, 200);
 });

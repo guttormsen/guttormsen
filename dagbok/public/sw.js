@@ -5,7 +5,7 @@
  * et cachelager på telefonen lenger enn nødvendig, og en gammel tilstand er
  * verre enn ingen tilstand.
  */
-const LAGER = 'dagbok-v3';
+const LAGER = 'dagbok-v4';
 const SKALL = ['./', 'index.html', 'app.css', 'app.js', 'api.js', 'manifest.webmanifest', 'ikoner/glass.svg'];
 
 self.addEventListener('install', (e) => {

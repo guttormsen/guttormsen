@@ -1479,9 +1479,46 @@ async function api(req, env, url, ctx) {
   return feil('Ukjent rute.', 404);
 }
 
+/**
+ * Stengt.
+ *
+ * Når `STENGT` står på «ja», finnes appen ikke lenger – ikke bare er den
+ * skjult. Alt svarer 410 Gone: det er ikke en feil som går over, det er at
+ * siden er borte. Tre ting følger av det valget:
+ *
+ *  - API-et stenger før innlogging, så en kopi av appen som ligger i en
+ *    nettleser fra før ikke kan gjøre noe likevel.
+ *  - Nettleseren viser fortsatt kroppen i en 410, så skiltet blir lest.
+ *  - Service workeren rydder seg selv bort på 410, så en installert kopi
+ *    slutter å late som om siden finnes. Se public/sw.js.
+ */
+const erStengt = (env) => env.STENGT === 'ja';
+
+/** Spurte nettleseren etter en side, eller etter en fil til en side? */
+const vilHaSide = (req) =>
+  req.headers.get('Sec-Fetch-Mode') === 'navigate'
+  || (req.headers.get('Accept') ?? '').includes('text/html');
+
+async function stengtSvar(req, env) {
+  const hoder = { 'Cache-Control': 'no-store' };
+  if (!vilHaSide(req)) {
+    return new Response('Stengt.', { status: 410, headers: { ...hoder, 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+  // Skiltet ligger som en vanlig fil, så det kan ses på og endres uten å grave
+  // i koden. Fins det ikke, er en enkel linje bedre enn en tom side.
+  const side = await env.ASSETS.fetch(new Request(new URL('/stengt.html', req.url)));
+  const tekst = side.ok ? await side.text() : '<!doctype html><meta charset="utf-8"><title>Stengt</title><h1>Stengt</h1>';
+  return new Response(tekst, { status: 410, headers: { ...hoder, 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    // Før alt annet. En stengt dør spør ikke om hvem du er.
+    if (erStengt(env)) {
+      if (url.pathname.startsWith('/api/')) return feil('Stengt.', 410);
+      return stengtSvar(req, env);
+    }
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
     try {
       return await api(req, env, url, ctx);
@@ -1497,6 +1534,8 @@ export default {
    * tid – og gjøre resten én gang i det vinduet.
    */
   async scheduled(event, env, ctx) {
+    // En stengt app minner ikke om kveldsrunden, og oppsummerer ikke uka.
+    if (erStengt(env)) return;
     // Tidspunktet kommer fra selve tikket, ikke fra klokka her og nå. Da kan
     // vinduene testes uten å måtte vente til halv ti om kvelden.
     const tid = new Date(event?.scheduledTime ?? Date.now());

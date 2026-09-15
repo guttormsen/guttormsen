@@ -86,6 +86,8 @@ const env = {
   TELEGRAM_TOKEN: process.env.TELEGRAM_TOKEN || '',
   TIDSSONE: 'Europe/Oslo',
   PAMINNELSE_KL: '21:30',
+  // Kjør med STENGT=ja for å se skiltet i stedet for appen.
+  STENGT: process.env.STENGT || 'nei',
 };
 
 createServer(async (inn, ut) => {

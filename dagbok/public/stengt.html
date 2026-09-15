@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="nb">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stengt</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#17120e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fdf7ee" media="(prefers-color-scheme: light)">
+<style>
+  /* Fila står alene: ingen stilark, ingen skript, ingenting å hente utenfra.
+     Den skal kunne vises når resten av appen ikke finnes lenger. */
+  :root {
+    color-scheme: dark light;
+    --natt: #17120e;
+    --flate: #251c16;
+    --tekst: #f7ece0;
+    --svak: #ad9781;
+    --kant: #3a2c22;
+    --lokk: #c9902f;
+    --glass-kant: #7a6249;
+    --glass-inni: rgba(247, 236, 224, .05);
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --natt: #fdf7ee;
+      --flate: #fffaf3;
+      --tekst: #2b211a;
+      --svak: #7c6857;
+      --kant: #e8dccb;
+      --glass-kant: #c3ac8d;
+      --glass-inni: rgba(43, 33, 26, .04);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: 2rem 1.25rem calc(2rem + env(safe-area-inset-bottom));
+    background: var(--natt);
+    color: var(--tekst);
+    font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .kort {
+    width: 100%;
+    max-width: 22rem;
+    text-align: center;
+    background: var(--flate);
+    border: 1px solid var(--kant);
+    border-radius: 22px;
+    padding: 2.5rem 1.6rem 2.2rem;
+    box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .55);
+  }
+  svg { width: 92px; height: auto; display: block; margin: 0 auto .4rem; }
+  h1 {
+    font-family: var(--serif);
+    font-size: 2.1rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: .8rem 0 .5rem;
+  }
+  p { color: var(--svak); font-size: .92rem; margin: 0; }
+  /* Et hakk i lyset som beveger seg sakte – nok til at siden ikke ser død ut. */
+  .skinn { animation: pust 7s ease-in-out infinite; }
+  @keyframes pust { 0%, 100% { opacity: .45; } 50% { opacity: .75; } }
+  @media (prefers-reduced-motion: reduce) { .skinn { animation: none; } }
+</style>
+<div class="kort">
+  <svg viewBox="0 0 100 132" role="img" aria-label="Et lukket glass">
+    <rect x="30" y="4" width="40" height="13" rx="5" fill="var(--lokk)"/>
+    <rect x="35" y="15" width="30" height="9" fill="var(--lokk)" opacity=".5"/>
+    <rect x="17" y="22" width="66" height="104" rx="18"
+          fill="var(--glass-inni)" stroke="var(--glass-kant)" stroke-width="4"/>
+    <rect class="skinn" x="26" y="34" width="9" height="78" rx="5" fill="var(--tekst)" opacity=".5"/>
+  </svg>
+  <h1>Stengt</h1>
+  <p>Denne siden er tatt ned.</p>
+</div>
