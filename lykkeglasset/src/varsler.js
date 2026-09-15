@@ -416,6 +416,7 @@ export const MENYTEKST = [
   '',
   'Trykk deg rundt, eller skriv:',
   '  /si <tekst> – melding til Lykke',
+  '  … eller send et bilde / en talemelding rett hit',
   '  /brev <tekst> – brev til en dårlig dag',
   '  /onske <tekst> – på ønskelista',
   '  /dag 2026-09-14 – én bestemt dag',

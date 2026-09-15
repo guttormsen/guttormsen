@@ -350,6 +350,23 @@ textarea:focus-visible {
 
 .liten-knapp { min-height: 38px; padding: .35rem .75rem; font-size: .85rem; border-radius: 999px; }
 
+/* Endre/slette en dag. Sletting får farge først når den har spørt én gang. */
+.arkbunn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin: 1rem 0 0;
+  padding-top: .9rem;
+  border-top: 1px solid var(--kant);
+}
+.fare { color: var(--svak); }
+.fare:hover { color: var(--rose); border-color: var(--rose); }
+.fare[data-sikker] {
+  color: var(--aksent-tekst);
+  background: var(--rose);
+  border-color: var(--rose);
+}
+
 .rad { display: flex; gap: .5rem; flex-wrap: wrap; }
 .rad > * { flex: 1 1 8rem; }
 
@@ -607,6 +624,52 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
 .hoydepunkt p { margin: .25rem 0 0; font-family: var(--serif); font-size: 1.05rem; line-height: 1.45; }
 .hoydepunkt[data-slag="tung"] { border-left-color: var(--h2); }
 
+/* ---------- quizen ---------- */
+
+.kat-rutenett { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+.kat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .3rem;
+  padding: 1rem;
+  min-height: 92px;
+  border-radius: 16px;
+  background: var(--flate-2);
+  border: 1px solid transparent;
+  text-align: left;
+}
+.kat:hover { border-color: var(--kant-sterk); }
+.kat b { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; }
+.kat span { font-size: .75rem; color: var(--svak); }
+.kat .maler { width: 100%; height: 3px; border-radius: 999px; background: var(--kant); margin-top: auto; overflow: hidden; }
+.kat .maler i { display: block; height: 100%; background: var(--honning); border-radius: 999px; }
+
+.quiz { display: flex; flex-direction: column; gap: 1.2rem; }
+.quiz .teller { display: flex; gap: 4px; }
+.quiz .teller i {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--kant);
+}
+.quiz .teller i[data-na="ja"] { background: var(--honning); }
+.quiz .teller i[data-svart="ja"] { background: var(--rose); }
+.quiz .kortet {
+  background: var(--flate);
+  border: 1px solid var(--kant);
+  border-radius: var(--runding);
+  padding: 1.6rem 1.3rem;
+  box-shadow: var(--skygge);
+  animation: stig .3s var(--kurve);
+}
+.quiz h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  margin: 0 0 1.2rem;
+  text-wrap: balance;
+}
+
 /* ---------- spørsmålslista ---------- */
 
 .spm-liste { display: flex; flex-direction: column; gap: .5rem; }
@@ -684,6 +747,70 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   from { opacity: 0; transform: translateY(26px) rotate(-3deg) scale(.94); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---------- vedlegg i meldinger ---------- */
+
+.boble .vedlegg { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 .45rem; }
+.boble .vedlegg a { display: block; line-height: 0; }
+.boble .vedlegg img {
+  width: 132px;
+  height: 132px;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+  background: var(--flate-2);
+}
+.boble .vedlegg audio { width: 15rem; max-width: 100%; height: 36px; }
+
+.utkastfiler { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.utkastfiler figure { position: relative; margin: 0; line-height: 0; }
+.utkastfiler img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; }
+.utkastfiler .merke-lyd {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background: var(--flate-2);
+  font-size: 1.2rem;
+}
+.utkastfiler button {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--tekst);
+  color: var(--natt);
+  font-size: .75rem;
+  line-height: 1;
+}
+
+.skrivefelt .fest {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 14px;
+  background: var(--flate-2);
+  border: 1px solid var(--kant);
+}
+.skrivefelt .fest svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.skrivefelt .fest:hover { border-color: var(--kant-sterk); }
 
 /* ---------- bilder og lyd ---------- */
 
@@ -866,7 +993,9 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
    nederst, slik man forventer av en chat. */
 .chat { display: flex; flex-direction: column; min-height: calc(100dvh - 12rem); }
 .chat .samtale { flex: 1; justify-content: flex-end; margin-bottom: 1rem; }
-.chat .skrivefelt { position: sticky; bottom: .5rem; }
+/* Tom samtale skal ikke dytte skrivefeltet opp i toppen av skjermen. */
+.chat .tomt { flex: 1; display: grid; place-items: center; margin: 0; padding: 0 1rem; }
+.chat .skrivebunn { position: sticky; bottom: .5rem; }
 
 .skrivefelt { display: flex; gap: .5rem; align-items: flex-end; }
 .skrivefelt textarea { min-height: 48px; max-height: 8rem; }
@@ -1031,6 +1160,8 @@ label { display: block; font-size: .88rem; color: var(--svak); margin: 0 0 .35re
   z-index: 30;
 }
 .brodske[data-vis="ja"] { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* I samtalen sitter skrivefeltet der nede. Beskjeden skal ikke dekke det. */
+body:has(.chat) .brodske { bottom: calc(9.5rem + env(safe-area-inset-bottom)); }
 
 /* ---------- ro ---------- */
 

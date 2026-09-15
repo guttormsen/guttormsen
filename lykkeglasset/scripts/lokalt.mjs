@@ -51,7 +51,10 @@ mkdirSync(FILROT, { recursive: true });
 const filsti = (navn) => join(FILROT, navn.replaceAll(':', '_'));
 
 const env = {
-  DB: { prepare: (sql) => new Setning(sql) },
+  DB: {
+    prepare: (sql) => new Setning(sql),
+    batch: async (setninger) => Promise.all(setninger.map((s) => s.run())),
+  },
   FILER: {
     async put(navn, data) { writeFileSync(filsti(navn), Buffer.from(data)); },
     async get(navn) {

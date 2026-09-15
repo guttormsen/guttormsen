@@ -109,6 +109,26 @@ export async function sendFil(env, metode, felt, fil, { navn, tekst, stille = tr
   }
 }
 
+/**
+ * Henter en fil han har sendt boten.
+ *
+ * Telegram gir bare en id i oppdateringen; selve bytene ligger bak `getFile`
+ * og en egen adresse. Returnerer `null` hvis noe skjærer seg – et bilde som
+ * ikke kom fram, skal ikke velte resten av meldingen.
+ */
+export async function hentFraTelegram(env, fil_id) {
+  const info = await kall(env, 'getFile', { file_id: fil_id });
+  if (!info?.file_path) return null;
+  try {
+    const svar = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_TOKEN}/${info.file_path}`);
+    if (!svar.ok) return null;
+    return { data: await svar.arrayBuffer(), sti: info.file_path };
+  } catch (feil) {
+    console.warn('Fikk ikke hentet fila:', feil?.message ?? feil);
+    return null;
+  }
+}
+
 /** Sier fra til Telegram hvor svarene skal sendes. Kjøres av oppsettskriptet. */
 export const settWebhook = (env, url, hemmelig) =>
   kall(env, 'setWebhook', {

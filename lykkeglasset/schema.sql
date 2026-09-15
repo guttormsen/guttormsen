@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS filer (
   slag      TEXT NOT NULL,             -- 'bilde' eller 'lyd'
   type      TEXT NOT NULL,             -- MIME
   storrelse INTEGER NOT NULL,
-  laget_kl  TEXT NOT NULL
+  laget_kl  TEXT NOT NULL,
+  -- NULL: hører til dagen. 0: lastet opp, ikke sendt ennå. Ellers: melding-id.
+  melding   INTEGER
 );
 CREATE INDEX IF NOT EXISTS filer_dato ON filer (dato);
 

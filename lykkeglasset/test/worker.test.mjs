@@ -29,6 +29,7 @@ let db;
 let sendte;
 let endret;
 let filer;
+let hentedeFiler;
 let env;
 
 const ekteFetch = globalThis.fetch;
@@ -39,9 +40,18 @@ beforeEach(() => {
   sendte = [];
   endret = [];
   filer = [];
+  hentedeFiler = [];
   ventende.length = 0;
   globalThis.fetch = async (url, valg) => {
     if (String(url).includes('api.telegram.org')) {
+      // Bilder han sender boten hentes i to steg: adressen, og så bytene.
+      if (String(url).includes('/file/bot')) {
+        return new Response(PIKSEL, { status: 200 });
+      }
+      if (String(url).includes('getFile')) {
+        hentedeFiler.push(JSON.parse(valg.body).file_id);
+        return new Response('{"ok":true,"result":{"file_path":"photos/en.jpg"}}', { status: 200 });
+      }
       // Filer går som multipart, ikke JSON. De telles for seg.
       if (valg.body instanceof FormData) {
         filer.push({
@@ -63,7 +73,12 @@ beforeEach(() => {
   // KV i minnet. Nok til å se at rett fil kommer ut igjen.
   const lager = new Map();
   env = {
-    DB: { prepare: (sql) => new Setning(db, sql) },
+    DB: {
+      prepare: (sql) => new Setning(db, sql),
+      // D1 kjører en batch atomisk. Her holder det å kjøre dem i rekkefølge –
+      // poenget i testen er at alle fire faktisk blir kjørt.
+      batch: async (setninger) => Promise.all(setninger.map((s) => s.run())),
+    },
     FILER: {
       put: async (n, v) => { lager.set(n, v); },
       get: async (n) => lager.get(n) ?? null,
@@ -1556,4 +1571,224 @@ test('med bare én lapp i glasset kommer den samme igjen', async () => {
   await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -30), humor: 4, gode_ting: [{ tekst: 'den ene' }] } });
   const d = await (await kall('/glasset?forrige=den%20ene', { cookie })).json();
   assert.equal(d.tekst, 'den ene');
+});
+
+/* ---------- slette en dag ---------- */
+
+test('hun kan slette en dag, med bilder og svar og alt', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4, gode_ting: [{ tekst: 'feil dag' }], svar: 'og et svar' } });
+  const { id } = await (await lastOppFil(cookie)).json();
+
+  sendte.length = 0;
+  assert.equal((await kall(`/dag?dato=${idag}`, { metode: 'DELETE', cookie })).status, 200);
+
+  const etter = await (await kall('/tilstand', { cookie })).json();
+  assert.equal(etter.idag, null);
+  assert.equal(etter.antall_gode_ting, 0);
+  assert.equal((await kall(`/fil/${id}`, { cookie })).status, 404);
+  assert.ok(sisteSvar().includes('slettet'));
+
+  // Og dagen kan føres på nytt, med varsel som om den var ny.
+  sendte.length = 0;
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 2 } });
+  assert.ok(alleMeldinger().includes('tung dag'));
+});
+
+test('han kan ikke slette dagene hennes', async () => {
+  const hennes = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie: hennes, kropp: { humor: 4 } });
+  const hans = await loggInn('mathias');
+  assert.equal((await kall(`/dag?dato=${idag}`, { metode: 'DELETE', cookie: hans })).status, 403);
+});
+
+test('en slettet privat dag sier ingenting', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 2, privat: true } });
+  sendte.length = 0;
+  await kall(`/dag?dato=${idag}`, { metode: 'DELETE', cookie });
+  assert.deepEqual(sendte, []);
+});
+
+test('glasset trekker fra alt når det er få gamle lapper', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  // Én gammel og tre ferske: da skal de ferske telle med, ellers blir det
+  // den samme lappen hver eneste gang.
+  await kall('/dag', { metode: 'POST', cookie, kropp: { dato: flyttDag(idag, -30), humor: 4, gode_ting: [{ tekst: 'gammel' }] } });
+  await kall('/dag', {
+    metode: 'POST', cookie,
+    kropp: { humor: 4, gode_ting: [{ tekst: 'fersk en' }, { tekst: 'fersk to' }, { tekst: 'fersk tre' }] },
+  });
+
+  const sett = new Set();
+  for (let i = 0; i < 12; i += 1) {
+    const g = await (await kall('/glasset', { cookie })).json();
+    sett.add(g.tekst);
+  }
+  assert.ok(sett.size > 1, `fikk bare «${[...sett]}» på tolv trekk`);
+});
+
+/* ---------- vedlegg i meldinger ---------- */
+
+const lastOppVedlegg = async (cookie, slag = 'bilde', type = 'image/jpeg') => {
+  const svar = await worker.fetch(new Request(`https://test.local/api/melding/fil?slag=${slag}`, {
+    method: 'POST',
+    headers: { 'Content-Type': type, Cookie: cookie },
+    body: PIKSEL,
+  }), env, ctx);
+  await roligNå();
+  return svar;
+};
+
+test('et bilde kan følge med en melding, og begge kan se det', async () => {
+  const hennes = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(hennes)).json();
+  filer.length = 0;
+
+  await kall('/melding', { metode: 'POST', cookie: hennes, kropp: { tekst: 'Se her', filer: [id] } });
+
+  const t = await (await kall('/tilstand', { cookie: hennes })).json();
+  assert.deepEqual(t.meldinger.at(-1).filer.map((f) => f.id), [id]);
+  assert.equal(filer.length, 1, 'vedlegget skal videre til Telegram');
+
+  const hans = await loggInn('mathias');
+  assert.equal((await kall(`/fil/${id}`, { cookie: hans })).status, 200);
+});
+
+test('et vedlegg havner ikke på dagen', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4 } });
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'hei', filer: [id] } });
+
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.deepEqual(t.idag.filer, [], 'dagens bilder er dagens, ikke samtalens');
+});
+
+test('en melding kan være bare et bilde', async () => {
+  const cookie = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  assert.equal((await kall('/melding', { metode: 'POST', cookie, kropp: { filer: [id] } })).status, 200);
+  assert.equal((await kall('/melding', { metode: 'POST', cookie, kropp: {} })).status, 400);
+});
+
+test('vedlegg som aldri ble sendt, ryddes bort etter et døgn', async () => {
+  const cookie = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  // Sett tidsstempelet to døgn tilbake, som om det ble glemt.
+  db.prepare("UPDATE filer SET laget_kl = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(id);
+
+  await kjørKlokka({ scheduledTime: iDagKl('21:35') });
+  assert.equal((await kall(`/fil/${id}`, { cookie })).status, 404);
+});
+
+test('et vedlegg som er sendt, ryddes ikke bort', async () => {
+  const cookie = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'beholdes', filer: [id] } });
+  db.prepare("UPDATE filer SET laget_kl = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(id);
+
+  await kjørKlokka({ scheduledTime: iDagKl('21:35') });
+  assert.equal((await kall(`/fil/${id}`, { cookie })).status, 200);
+});
+
+test('å slette dagen rører ikke vedleggene i samtalen', async () => {
+  const cookie = await loggInn('lykke');
+  const idag = dagsnokkel(new Date(), 'Europe/Oslo');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4 } });
+  const dagsbilde = (await (await lastOppFil(cookie)).json()).id;
+  const vedlegg = (await (await lastOppVedlegg(cookie)).json()).id;
+  await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'står', filer: [vedlegg] } });
+
+  await kall(`/dag?dato=${idag}`, { metode: 'DELETE', cookie });
+
+  assert.equal((await kall(`/fil/${dagsbilde}`, { cookie })).status, 404, 'dagens bilde skal bort');
+  assert.equal((await kall(`/fil/${vedlegg}`, { cookie })).status, 200, 'meldingen sin står igjen');
+  const t = await (await kall('/tilstand', { cookie })).json();
+  assert.deepEqual(t.meldinger.at(-1).filer.map((f) => f.id), [vedlegg]);
+});
+
+test('han kan angre på et vedlegg han ikke har sendt ennå', async () => {
+  const hans = await loggInn('mathias');
+  const { id } = await (await lastOppVedlegg(hans)).json();
+  assert.equal((await kall(`/fil/${id}`, { metode: 'DELETE', cookie: hans })).status, 200);
+  assert.equal((await kall(`/fil/${id}`, { cookie: hans })).status, 404);
+});
+
+test('men ikke på et vedlegg som er sendt', async () => {
+  const hennes = await loggInn('lykke');
+  const { id } = await (await lastOppVedlegg(hennes)).json();
+  await kall('/melding', { metode: 'POST', cookie: hennes, kropp: { tekst: 'sendt', filer: [id] } });
+
+  const hans = await loggInn('mathias');
+  assert.equal((await kall(`/fil/${id}`, { metode: 'DELETE', cookie: hans })).status, 403);
+});
+
+test('bildetallet i sammendraget teller dagene, ikke samtalen', async () => {
+  const cookie = await loggInn('lykke');
+  await kall('/dag', { metode: 'POST', cookie, kropp: { humor: 4 } });
+  await lastOppFil(cookie);
+  const { id } = await (await lastOppVedlegg(cookie)).json();
+  await kall('/melding', { metode: 'POST', cookie, kropp: { tekst: 'med bilde', filer: [id] } });
+
+  const s = await (await kall('/sammendrag?periode=uke', { cookie })).json();
+  assert.equal(s.antall_bilder, 1);
+});
+
+/* ---------- bilde fra Telegram ---------- */
+
+test('et bilde han sender boten, havner i samtalen', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  sendte.length = 0;
+
+  await fraEier(undefined, {
+    photo: [{ file_id: 'liten', file_size: 100 }, { file_id: 'stor', file_size: 900 }],
+    caption: 'Se hvor fint her',
+  });
+
+  assert.deepEqual(hentedeFiler, ['stor'], 'den største varianten skal hentes');
+  const m = (await meldingene()).at(-1);
+  assert.equal(m.fra, 'mathias');
+  assert.equal(m.tekst, 'Se hvor fint her');
+  assert.equal(m.filer.length, 1);
+  assert.ok(sisteSvar().includes('Bildet ligger i samtalen'));
+
+  // Og hun får det ut igjen.
+  const cookie = await loggInn('lykke');
+  const hentet = await kall(`/fil/${m.filer[0].id}`, { cookie });
+  assert.equal(hentet.status, 200);
+  assert.deepEqual(new Uint8Array(await hentet.arrayBuffer()), PIKSEL);
+});
+
+test('et bilde uten tekst blir en melding likevel', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await fraEier(undefined, { photo: [{ file_id: 'stor', file_size: 900 }] });
+  assert.equal((await meldingene()).at(-1).tekst, '📷');
+});
+
+test('en talemelding til boten blir et lydklipp i samtalen', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await fraEier(undefined, { voice: { file_id: 'tale', mime_type: 'audio/ogg' } });
+
+  const m = (await meldingene()).at(-1);
+  assert.equal(m.tekst, '🎙');
+  assert.equal(m.filer[0].slag, 'lyd');
+  assert.equal(m.filer[0].type, 'audio/ogg');
+});
+
+test('bilder hun ikke har sendt, hører ikke boten på', async () => {
+  env.TELEGRAM_WEBHOOK_HEMMELIG = HEM;
+  await blirEier();
+  await oppdatering({
+    message: { from: { id: 999 }, chat: { id: -1, type: 'group' }, photo: [{ file_id: 'stor' }] },
+  });
+  assert.deepEqual(hentedeFiler, [], 'bare eieren slipper til');
+  assert.deepEqual(await meldingene(), []);
 });

@@ -20,7 +20,9 @@ import {
   MENY, TILBAKE, MENYTEKST, HENDELSER, REAKSJONER, sporsmalFor, milepælFor, milepæl,
   LISTA, KATEGORIER, sporsmalMed, PERIODER, sammendragstekst, sporsmalstekst,
 } from './varsler.js';
-import { sendTelegram, sendFil, kvitterTrykk, byttUtKnapper, endreMelding } from './telegram.js';
+import {
+  sendTelegram, sendFil, hentFraTelegram, kvitterTrykk, byttUtKnapper, endreMelding,
+} from './telegram.js';
 
 const LYKKE = 'lykke';
 const MATHIAS = 'mathias';
@@ -142,6 +144,24 @@ const leggMelding = (env, fra, tekst) =>
   env.DB.prepare('INSERT INTO meldinger (fra, tekst, laget_kl) VALUES (?1, ?2, ?3)')
     .bind(fra, tekst, nå()).run();
 
+/**
+ * Samme, men med vedlegg som allerede ligger i lageret og venter (`melding = 0`).
+ *
+ * Bytene kan ikke reise sammen med teksten, så de lastes opp først og festes
+ * her. Returnerer id-en til meldingen.
+ */
+async function leggMeldingMedVedlegg(env, fra, tekst, vedlegg) {
+  await leggMelding(env, fra, tekst);
+  const rad = await env.DB.prepare('SELECT id FROM meldinger ORDER BY id DESC LIMIT 1').first();
+  if (vedlegg.length) {
+    const merker = vedlegg.map((_, i) => `?${i + 2}`).join(',');
+    await env.DB
+      .prepare(`UPDATE filer SET melding = ?1 WHERE melding = 0 AND id IN (${merker})`)
+      .bind(rad.id, ...vedlegg).run();
+  }
+  return rad.id;
+}
+
 /* ---------- innlogging ---------- */
 
 async function loggInn(req, env, ctx) {
@@ -216,6 +236,14 @@ async function fellesTilstand(env) {
     env.DB.prepare('SELECT * FROM brev ORDER BY id').all(),
   ]);
 
+  const vedlegg = await env.DB
+    .prepare('SELECT id, melding, slag, type FROM filer WHERE melding > 0 ORDER BY laget_kl').all();
+  const påMeldingen = new Map();
+  for (const f of (vedlegg.results ?? [])) {
+    if (!påMeldingen.has(f.melding)) påMeldingen.set(f.melding, []);
+    påMeldingen.get(f.melding).push({ id: f.id, slag: f.slag, type: f.type });
+  }
+
   const reaksjoner = await env.DB.prepare('SELECT melding, hvem, tegn FROM reaksjoner').all();
   const påMelding = new Map();
   for (const r of (reaksjoner.results ?? [])) {
@@ -227,7 +255,7 @@ async function fellesTilstand(env) {
     dato,
     dager: (dager.results ?? []).map(radTilDag),
     meldinger: (meldinger.results ?? []).reverse()
-      .map((m) => ({ ...m, reaksjoner: påMelding.get(m.id) ?? [] })),
+      .map((m) => ({ ...m, reaksjoner: påMelding.get(m.id) ?? [], filer: påMeldingen.get(m.id) ?? [] })),
     onsker: onsker.results ?? [],
     brev: brev.results ?? [],
     behov: BEHOV,
@@ -388,12 +416,19 @@ async function trekkLapp(env, forrige = null) {
   const gamle = await env.DB
     .prepare('SELECT dato, gode_ting FROM dager WHERE dato < ?1 AND gode_ting != ?2')
     .bind(grense, '[]').all();
-  let rader = gamle.results ?? [];
-  if (!rader.length) {
-    const alt = await env.DB
-      .prepare('SELECT dato, gode_ting FROM dager WHERE gode_ting != ?1').bind('[]').all();
-    rader = alt.results ?? [];
-  }
+  // Helst noe hun har rukket å glemme – men er det bare én gammel lapp, blir
+  // det den samme hver gang, og da ser glasset tomt ut. Da tas alt med.
+  const alt = await env.DB
+    .prepare('SELECT dato, gode_ting FROM dager WHERE gode_ting != ?1').bind('[]').all();
+  const gamleRader = gamle.results ?? [];
+  const antallGamle = gamleRader.reduce((n, r) => {
+    try {
+      return n + JSON.parse(r.gode_ting || '[]').length;
+    } catch {
+      return n;
+    }
+  }, 0);
+  const rader = antallGamle >= 3 ? gamleRader : (alt.results ?? []);
 
   const lapper = [];
   for (const rad of rader) {
@@ -464,7 +499,8 @@ async function filerFor(env, datoer) {
   if (!datoer.length) return new Map();
   const merker = datoer.map((_, i) => `?${i + 1}`).join(',');
   const rader = await env.DB
-    .prepare(`SELECT id, dato, slag, type FROM filer WHERE dato IN (${merker}) ORDER BY laget_kl`)
+    .prepare(`SELECT id, dato, slag, type FROM filer
+              WHERE melding IS NULL AND dato IN (${merker}) ORDER BY laget_kl`)
     .bind(...datoer).all();
   const kart = new Map(datoer.map((d) => [d, []]));
   for (const r of (rader.results ?? [])) kart.get(r.dato)?.push(r);
@@ -488,23 +524,41 @@ async function medFiler(env, dag, egen) {
   return { ...dag, filer: kart.get(dag.dato) ?? [], sporsmal, svar: svaret?.tekst ?? null };
 }
 
-async function lagreFil(req, env, ctx, url) {
-  const dato = url.searchParams.get('dato') || idag(env);
-  const slag = url.searchParams.get('slag') === 'lyd' ? 'lyd' : 'bilde';
+/**
+ * Tar imot rå bytes og legger dem i lageret.
+ *
+ * @param {number|null} melding `null` for en dag, `0` for et vedlegg som
+ *   ennå ikke er sendt.
+ */
+async function taImotFil(req, env, dato, slag, melding) {
   const type = (req.headers.get('Content-Type') ?? '').split(';')[0].trim();
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
-  if (!TYPER[slag].includes(type)) return feil(`Ikke en fil vi kan ta imot: ${type}`, 415);
-
   const data = await req.arrayBuffer();
-  if (!data.byteLength) return feil('Tom fil.', 400);
-  if (data.byteLength > MAKS_FIL) return feil('Fila er for stor. Maks 8 MB.', 413);
+  return lagreBytes(env, { data, dato, slag, type, melding });
+}
+
+/** Selve lagringen. Bytene kan komme fra appen eller fra Telegram. */
+async function lagreBytes(env, { data, dato, slag, type, melding }) {
+  if (!TYPER[slag].includes(type)) return { feil: `Ikke en fil vi kan ta imot: ${type}`, status: 415 };
+  if (!data.byteLength) return { feil: 'Tom fil.', status: 400 };
+  if (data.byteLength > MAKS_FIL) return { feil: 'Fila er for stor. Maks 8 MB.', status: 413 };
 
   const id = crypto.randomUUID();
   await env.FILER.put(`fil:${id}`, data, { metadata: { type, slag } });
   await env.DB
-    .prepare('INSERT INTO filer (id, dato, slag, type, storrelse, laget_kl) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
-    .bind(id, dato, slag, type, data.byteLength, nå()).run();
+    .prepare(`INSERT INTO filer (id, dato, slag, type, storrelse, laget_kl, melding)
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
+    .bind(id, dato, slag, type, data.byteLength, nå(), melding).run();
+  return { id, slag, type, data };
+}
+
+async function lagreFil(req, env, ctx, url) {
+  const dato = url.searchParams.get('dato') || idag(env);
+  const slag = url.searchParams.get('slag') === 'lyd' ? 'lyd' : 'bilde';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
+
+  const lagret = await taImotFil(req, env, dato, slag, null);
+  if (lagret.feil) return feil(lagret.feil, lagret.status);
+  const { id, data, type } = lagret;
 
   // Delte dager sender fila videre. En privat dag gjør det ikke.
   const dag = await hentDag(env, dato);
@@ -609,7 +663,8 @@ async function sammendrag(env, hvem, url) {
 
   const gode = åpne.flatMap((d) => d.gode_ting);
   const filer = await env.DB
-    .prepare('SELECT COUNT(*) AS n FROM filer WHERE dato >= ?1 AND dato <= ?2').bind(fra, til).first();
+    .prepare(`SELECT COUNT(*) AS n FROM filer
+              WHERE melding IS NULL AND dato >= ?1 AND dato <= ?2`).bind(fra, til).first();
 
   const kort = (d) => (d ? { dato: d.dato, humor: d.humor, gode_ting: d.gode_ting } : null);
 
@@ -772,6 +827,7 @@ const KOMMANDOER = [
   '/glasset – trekk en lapp fra glasset',
   '',
   '/si <tekst> – send en melding til Lykke',
+  'Send et bilde eller en talemelding hit, så havner det i samtalen.',
   '/brev <tekst> – legg inn et brev til en dårlig dag',
   '/onske <tekst> – legg til på ønskelista',
   '/onsker – vis ønskelista',
@@ -797,6 +853,26 @@ const svarTil = (env, ctx, chat, tekst) => {
  * Alt annet svares det høflig ja til og gjøres ingenting med – en webhook som
  * klager, forteller bare den som prøver at den fant noe.
  */
+/**
+ * Finner ut om meldingen fra Telegram har et vedlegg vi kan ta imot.
+ *
+ * Et bilde kommer i flere størrelser; vi tar den største som får plass. Lyd
+ * kommer som `voice` (talemelding) eller `audio` (en fil).
+ */
+function telegramVedlegg(melding) {
+  if (melding.photo?.length) {
+    const brukbare = melding.photo.filter((f) => (f.file_size ?? 0) <= MAKS_FIL);
+    const størst = (brukbare.length ? brukbare : melding.photo).at(-1);
+    return { fil_id: størst.file_id, slag: 'bilde', type: 'image/jpeg' };
+  }
+  const lyd = melding.voice ?? melding.audio;
+  if (lyd) {
+    const type = TYPER.lyd.includes(lyd.mime_type) ? lyd.mime_type : 'audio/ogg';
+    return { fil_id: lyd.file_id, slag: 'lyd', type };
+  }
+  return null;
+}
+
 async function fraTelegram(req, env, ctx, origin) {
   if (!env.TELEGRAM_WEBHOOK_HEMMELIG
     || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TELEGRAM_WEBHOOK_HEMMELIG) {
@@ -869,6 +945,31 @@ async function fraTelegram(req, env, ctx, origin) {
     }
 
     kvitter();
+    return json({ ok: true });
+  }
+
+  /* --- bilde eller lydklipp han sender boten --- */
+  const sendtFil = melding && telegramVedlegg(melding);
+  if (sendtFil) {
+    const hentet = await hentFraTelegram(env, sendtFil.fil_id);
+    if (!hentet) {
+      svarTil(env, ctx, chat, 'Fikk ikke hentet fila fra Telegram. Prøv en gang til.');
+      return json({ ok: true });
+    }
+    const lagret = await lagreBytes(env, {
+      data: hentet.data,
+      dato: idag(env),
+      slag: sendtFil.slag,
+      type: sendtFil.type,
+      melding: 0,
+    });
+    if (lagret.feil) {
+      svarTil(env, ctx, chat, lagret.feil);
+      return json({ ok: true });
+    }
+    const bildetekst = (melding.caption ?? '').trim().slice(0, 2000);
+    await leggMeldingMedVedlegg(env, MATHIAS, bildetekst || (sendtFil.slag === 'lyd' ? '🎙' : '📷'), [lagret.id]);
+    svarTil(env, ctx, chat, sendtFil.slag === 'lyd' ? '✓ Lydklippet ligger i samtalen.' : '✓ Bildet ligger i samtalen.');
     return json({ ok: true });
   }
 
@@ -1075,14 +1176,17 @@ async function api(req, env, url, ctx) {
     if (!rad) return feil('Fant ikke fila.', 404);
 
     if (req.method === 'DELETE') {
-      if (!erLykke) return feil('Ikke din å slette.', 403);
+      // Et vedlegg som ikke er festet til noe ennå, er et utkast. Den som
+      // skriver meldingen får angre på det, uansett hvem av de to det er.
+      if (!erLykke && rad.melding !== 0) return feil('Ikke din å slette.', 403);
       await env.FILER.delete(`fil:${rad.id}`);
       await env.DB.prepare('DELETE FROM filer WHERE id = ?1').bind(rad.id).run();
       return json({ ok: true });
     }
 
-    // En privat dag har heller ingen bilder å vise fram.
-    if (!erLykke && !(await erDelt(env))) {
+    // Et vedlegg hører til samtalen og er delt i kraft av å være sendt.
+    // En privat dag har derimot ingen bilder å vise fram.
+    if (rad.melding === null && !erLykke && !(await erDelt(env))) {
       const dag = await hentDag(env, rad.dato);
       if (dag?.privat) return feil('Ikke delt.', 403);
     }
@@ -1172,6 +1276,34 @@ async function api(req, env, url, ctx) {
     });
   }
 
+  // En dag ført ved uhell skal kunne slettes, ikke bare rettes.
+  if (sti === '/dag' && req.method === 'DELETE') {
+    if (!erLykke) return feil('Bare Lykke sletter sine egne dager.', 403);
+    const dato = url.searchParams.get('dato') ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dato)) return feil('Ugyldig dato.', 400);
+
+    const dag = await hentDag(env, dato);
+    if (!dag) return feil('Fant ikke dagen.', 404);
+
+    // Filene må ut av lageret også, ellers blir de liggende uten en dag. Bare
+    // dagens egne: et vedlegg i samtalen bærer samme dato, men hører til
+    // meldingen sin og skal stå der den står.
+    const filer = await env.DB
+      .prepare('SELECT id FROM filer WHERE melding IS NULL AND dato = ?1').bind(dato).all();
+    for (const f of (filer.results ?? [])) await env.FILER.delete(`fil:${f.id}`);
+
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM dager WHERE dato = ?1').bind(dato),
+      env.DB.prepare('DELETE FROM filer WHERE melding IS NULL AND dato = ?1').bind(dato),
+      env.DB.prepare('DELETE FROM svar WHERE dato = ?1').bind(dato),
+      // Varselraden går med, så dagen kan føres på nytt uten å være «alt meldt».
+      env.DB.prepare('DELETE FROM varsler WHERE dato = ?1').bind(dato),
+    ]);
+
+    if (!dag.privat) send(env, ctx, `🗑 Lykke slettet ${norskDato(dato, true)}.`, true);
+    return json({ ok: true });
+  }
+
   if (sti === '/dag' && req.method === 'POST') {
     if (!erLykke) return feil('Bare Lykke skriver kveldsrunden.', 403);
     return lagreDag(kropp, env, ctx);
@@ -1179,12 +1311,36 @@ async function api(req, env, url, ctx) {
 
   /* --- meldinger --- */
 
+  // Vedlegg lastes opp først og festes når meldingen sendes. Rå bytes og
+  // JSON kan ikke reise i samme forespørsel.
+  if (sti === '/melding/fil' && req.method === 'POST') {
+    const slag = url.searchParams.get('slag') === 'lyd' ? 'lyd' : 'bilde';
+    const lagret = await taImotFil(req, env, idag(env), slag, 0);
+    if (lagret.feil) return feil(lagret.feil, lagret.status);
+    return json({ id: lagret.id, slag: lagret.slag, type: lagret.type });
+  }
+
   if (sti === '/melding' && req.method === 'POST') {
     const tekst = tekstFra('tekst', 2000);
-    if (!tekst) return feil('Tom melding.', 400);
-    await leggMelding(env, hvem, tekst);
+    const vedlegg = (Array.isArray(kropp?.filer) ? kropp.filer : []).slice(0, 6).map(String);
+    if (!tekst && !vedlegg.length) return feil('Tom melding.', 400);
+    await leggMeldingMedVedlegg(env, hvem, tekst || '📷', vedlegg);
+
+    if (vedlegg.length) {
+      // Hennes vedlegg går videre til Telegram, som meldingene ellers.
+      if (erLykke && ctx?.waitUntil) {
+        for (const id of vedlegg) {
+          const f = await env.DB.prepare('SELECT slag FROM filer WHERE id = ?1').bind(id).first();
+          const data = await env.FILER.get(`fil:${id}`, 'arrayBuffer');
+          if (!data) continue;
+          ctx.waitUntil(f?.slag === 'lyd'
+            ? sendFil(env, 'sendAudio', 'audio', data, { navn: 'lydklipp', tekst: `🎙 Fra Lykke` })
+            : sendFil(env, 'sendPhoto', 'photo', data, { navn: 'bilde.jpg', tekst: `📷 Fra Lykke` }));
+        }
+      }
+    }
     // Bare den ene veien har en telefon å pinge. Den andre ser det i appen.
-    if (erLykke) send(env, ctx, nyMelding(tekst));
+    if (erLykke && tekst) send(env, ctx, nyMelding(tekst));
     return json({ ok: true });
   }
 
@@ -1344,6 +1500,17 @@ export default {
           .filter((d) => !d.privat && dagerMellom(d.dato, dato) < 7)
           .reduce((n, d) => n + d.gode_ting.length, 0);
         await sendEnGang(env, ctx, 'uke', dato, ukesbrev(uke, gode), true);
+      }
+    }
+
+    /* Vedlegg som aldri ble sendt, blir liggende. De ryddes bort en gang i døgnet. */
+    if (iVinduet(env.PAMINNELSE_KL || '21:30')) {
+      const glemte = await env.DB
+        .prepare("SELECT id FROM filer WHERE melding = 0 AND laget_kl < ?1")
+        .bind(new Date(tid.getTime() - 86400000).toISOString()).all();
+      for (const f of (glemte.results ?? [])) {
+        await env.FILER.delete(`fil:${f.id}`);
+        await env.DB.prepare('DELETE FROM filer WHERE id = ?1').bind(f.id).run();
       }
     }
 

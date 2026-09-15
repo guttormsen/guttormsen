@@ -176,6 +176,7 @@ const IKONER = {
   meldinger: () => ikon('M21 11.5a7.5 7.5 0 0 1-11 6.6L4 20l1.9-5.1A7.5 7.5 0 1 1 21 11.5z'),
   tannhjul: () => ikon('M12 15.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8z', 'M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.2a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.4 14h-.2a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.2-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 3.4v-.2a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.2a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.3 1z'),
   tilbake: () => ikon('M15 19l-7-7 7-7'),
+  binders: () => ikon('M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.9-2.9l8.5-8.5'),
 };
 
 /**
@@ -507,6 +508,56 @@ function dagsark(dag, { egen }) {
     ]),
     dag.holdt_tungt && el('p', { class: 'hjelp', text: 'Noe var tungt. Det er ikke delt.' }),
     mediekort(dag, { egen }),
+    egen && arkbunn(dag),
+  ]);
+}
+
+/**
+ * Endre eller slette en dag som er ført.
+ *
+ * Å slette er ikke det samme som å angre på et ord, så sletteknappen spør
+ * én gang først – men i selve knappen, ikke i en boks som spretter opp og
+ * må lukkes. Angrer man på spørsmålet, forsvinner det av seg selv.
+ */
+function arkbunn(dag) {
+  let vent = null;
+
+  const slett = el('button', {
+    class: 'blank liten-knapp fare', type: 'button', text: 'Slett dagen',
+    onclick: async () => {
+      if (!vent) {
+        slett.textContent = 'Sikker? Trykk igjen';
+        slett.dataset.sikker = 'ja';
+        vent = setTimeout(() => {
+          vent = null;
+          slett.textContent = 'Slett dagen';
+          delete slett.dataset.sikker;
+        }, 5000);
+        return;
+      }
+      clearTimeout(vent);
+      vent = null;
+      slett.disabled = true;
+      try {
+        await api(`/dag?dato=${dag.dato}`, { metode: 'DELETE' });
+        valgtDag = null;
+        si(`${datoOrd(dag.dato)} er slettet.`);
+        await start();
+      } catch (e) {
+        slett.disabled = false;
+        slett.textContent = 'Slett dagen';
+        delete slett.dataset.sikker;
+        si(e.message);
+      }
+    },
+  });
+
+  return el('div', { class: 'arkbunn' }, [
+    el('button', {
+      class: 'blank liten-knapp', type: 'button', text: 'Endre dagen',
+      onclick: () => kveldsrunden(tilstand, start, dag.dato),
+    }),
+    slett,
   ]);
 }
 
@@ -687,11 +738,7 @@ function faneIdag(t) {
           el('p', { style: 'margin:.35rem 0 0', text: dag.svar }),
         ]),
         mediekort(dag, { egen: true }),
-        el('button', {
-          class: 'blank liten-knapp', type: 'button', style: 'margin-top:.5rem',
-          onclick: () => kveldsrunden(t, start),
-          text: 'Endre dagen',
-        }),
+        arkbunn(dag),
       ])
       : el('div', { class: 'kort løftet' }, [
         el('div', { class: 'glass-rad' }, [
@@ -1156,7 +1203,17 @@ function faneGlasset(t) {
       }),
       lapperute,
     ]),
-    (erLykke || t.delt) && sporsmalSeksjon(t),
+    (erLykke || t.delt) && el('button', {
+      class: 'kort', type: 'button',
+      style: 'display:flex;width:100%;align-items:center;justify-content:space-between;gap:1rem;text-align:left',
+      onclick: () => visQuiz(t),
+    }, [
+      el('span', {}, [
+        el('b', { style: 'font-family:var(--serif);font-size:1.15rem;display:block', text: 'Spørsmål' }),
+        el('span', { class: 'liten svak', text: 'Seksti spørsmål i fem kategorier. Svar når du vil.' }),
+      ]),
+      el('span', { class: 'svak', style: 'font-size:1.3rem', text: '›' }),
+    ]),
     el('div', { class: 'seksjon' }, [
       el('h2', { text: 'Alt som er skrevet' }),
       el('div', { style: 'margin:.7rem 0' }, [sokefelt]),
@@ -1184,87 +1241,114 @@ function faneGlasset(t) {
 }
 
 /** Hele året på én side. Den eneste skjermen som er laget for å leses. */
+/* ---------- quizen ---------- */
+
 /**
- * Spørsmålslista hennes.
+ * Spørsmålene hennes, som en egen skjerm.
  *
- * Seksti spørsmål i en liste er en oppgave. Derfor velger hun selv kategori
- * og hvor mange hun orker å se – og forslagene byttes ut hver gang.
+ * Lå før som to rader med brikker midt i Glasset-fanen og rotet til alt rundt
+ * seg. Nå er det ett spørsmål om gangen, stort nok til å tenke over.
  */
-function sporsmalSeksjon(t) {
-  const rute = el('div');
-  let kat = null;
-  let antall = 3;
+async function visQuiz(t, kat = null) {
+  fanerad.replaceChildren();
+  tegn(el('p', { class: 'laster', text: 'Henter …' }));
 
-  const hent = async () => {
-    try {
-      const p = new URLSearchParams({ antall: String(antall) });
-      if (kat) p.set('kat', kat);
-      tegnLista(await api(`/sporsmal?${p}`));
-    } catch (e) { si(e.message); }
-  };
+  let d;
+  try {
+    d = await api(`/sporsmal?antall=30${kat ? `&kat=${kat}` : ''}`);
+  } catch (e) {
+    si(e.message);
+    return visApp(t);
+  }
 
-  const svarPa = (spm, gammelt) => {
-    const felt = voksende(el('textarea', {
-      class: 'vokser', rows: 2, value: gammelt ?? '',
-      placeholder: 'Skriv så langt eller kort du vil …',
-    }));
-    const lagre = async () => {
-      try {
-        await api('/sporsmal', { metode: 'POST', kropp: { k: spm.k, tekst: felt.value } });
-        si(felt.value.trim() ? 'Svart.' : 'Fjernet.');
-        hent();
-      } catch (e) { si(e.message); }
-    };
+  // Ingen kategori valgt: vis dem, med hvor langt hun er kommet i hver.
+  if (!kat) {
+    const alle = await api('/sporsmal?antall=30');
     tegn(
-      hode(spm.t, { stempel: t.behov ? 'Spørsmål' : null, handlinger: [knappIkon('tilbake', 'Tilbake', () => visApp(t))] }),
-      el('div', { class: 'kort' }, [
-        felt,
-        el('div', { class: 'stegrad' }, [
-          el('button', { class: 'hoved', type: 'button', onclick: lagre, text: 'Lagre' }),
-          el('button', { class: 'blank', type: 'button', onclick: () => visApp(t), text: 'Avbryt' }),
-        ]),
-      ]),
-    );
-    felt.focus();
-  };
-
-  const tegnLista = (d) => {
-    const katValg = [['Alle', null], ...Object.entries(d.kategorier).map(([k, navn]) => [navn, k])];
-    rute.replaceChildren(
-      el('div', { class: 'brikker' }, katValg.map(([navn, k]) =>
-        el('button', {
-          type: 'button', text: navn, 'aria-pressed': String(kat === k),
-          onclick: () => { kat = k; hent(); },
-        }))),
-      el('div', { class: 'brikker', style: 'margin-top:.5rem' }, [3, 10, 20, 30].map((n) =>
-        el('button', {
-          type: 'button', text: `${n}`, 'aria-pressed': String(antall === n),
-          'aria-label': `Vis ${n} spørsmål`,
-          onclick: () => { antall = n; hent(); },
-        }))),
-      el('p', { class: 'hjelp', style: 'margin:.8rem 0 .6rem', text: `${d.ferdig} svart · ${d.igjen} igjen` }),
-      el('div', { class: 'spm-liste' }, d.forslag.map((spm) =>
-        el('button', { class: 'spm', type: 'button', text: spm.t, onclick: () => svarPa(spm, null) }))),
-      d.forslag.length ? el('button', {
-        class: 'blank', type: 'button', style: 'margin-top:.6rem', onclick: hent, text: '↻ Vis andre',
-      }) : el('p', { class: 'hjelp', text: 'Du har svart på alle i denne kategorien.' }),
-      d.svarte.length ? el('div', { style: 'margin-top:1.4rem' }, [
-        el('p', { class: 'stempel', text: 'Svarte' }),
-        el('div', { class: 'spm-liste', style: 'margin-top:.6rem' }, d.svarte.slice(0, 20).map((spm) =>
+      hode('Spørsmål', {
+        stempel: `${alle.ferdig} svart · ${alle.igjen} igjen`,
+        handlinger: [knappIkon('tilbake', 'Tilbake', () => visApp(t))],
+      }),
+      el('p', { class: 'hjelp', style: 'margin-bottom:1rem', text: 'Velg noe du har lyst til å tenke på. Svarene legger seg i arkivet.' }),
+      el('div', { class: 'kat-rutenett' }, Object.entries(alle.kategorier).map(([k, navn]) =>
+        el('button', { class: 'kat', type: 'button', onclick: () => visQuiz(t, k) }, [
+          el('b', { text: navn }),
+          el('span', { text: 'Åpne' }),
+          el('span', { class: 'maler' }, [el('i')]),
+        ]))),
+      alle.svarte.length ? el('div', { class: 'seksjon', style: 'margin-top:1.6rem' }, [
+        el('h2', { text: `Svarte · ${alle.svarte.length}` }),
+        el('div', { class: 'spm-liste' }, alle.svarte.slice(0, 30).map((spm) =>
           el('button', {
             class: 'spm', type: 'button', 'data-svart': 'ja',
-            onclick: () => svarPa(spm, spm.svar),
+            onclick: () => visSpørsmål(t, [spm], 0, null, spm.svar),
           }, [spm.t, el('span', { class: 'svaret', text: spm.svar })]))),
       ]) : null,
     );
+    // Fyll framdriftsstrekene når tallene er kjent.
+    const iKat = Object.keys(alle.kategorier);
+    for (const [i, k] of iKat.entries()) {
+      api(`/sporsmal?kat=${k}&antall=3`).then((kd) => {
+        const rute = app.querySelectorAll('.kat')[i];
+        if (!rute) return;
+        const alle_i = kd.ferdig + kd.igjen;
+        rute.querySelector('span').textContent = `${kd.ferdig} av ${alle_i}`;
+        rute.querySelector('.maler i').style.width = `${Math.round((kd.ferdig / alle_i) * 100)}%`;
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  if (!d.forslag.length) {
+    tegn(
+      hode(d.kategorier[kat], { handlinger: [knappIkon('tilbake', 'Tilbake', () => visQuiz(t))] }),
+      el('div', { class: 'kort midt' }, [
+        el('p', { style: 'margin:0', text: 'Du har svart på alle i denne kategorien.' }),
+      ]),
+    );
+    return;
+  }
+  visSpørsmål(t, d.forslag, 0, kat, null);
+}
+
+/** Ett spørsmål om gangen, med vei videre uten å måtte svare. */
+function visSpørsmål(t, bunke, i, kat, gammelt) {
+  const spm = bunke[i];
+  const felt = voksende(el('textarea', {
+    class: 'vokser', rows: 3, value: gammelt ?? '',
+    placeholder: 'Skriv så langt eller kort du vil …',
+  }));
+
+  const lagre = async () => {
+    try {
+      await api('/sporsmal', { metode: 'POST', kropp: { k: spm.k, tekst: felt.value } });
+      si(felt.value.trim() ? 'Svart.' : 'Fjernet.');
+      if (kat && i + 1 < bunke.length) visSpørsmål(t, bunke, i + 1, kat, null);
+      else visQuiz(t, kat);
+    } catch (e) { si(e.message); }
   };
 
-  hent();
-  return el('div', { class: 'seksjon' }, [
-    el('h2', { text: 'Spørsmål' }),
-    el('p', { class: 'hjelp', text: 'Svar når du vil. Svarene legger seg i arkivet sammen med de gode tingene.' }),
-    rute,
-  ]);
+  tegn(
+    hode(kat ? t.kategorier?.[kat] ?? 'Spørsmål' : 'Spørsmål', {
+      stempel: kat ? `${i + 1} av ${bunke.length}` : 'Svart før',
+      handlinger: [knappIkon('tilbake', 'Tilbake', () => visQuiz(t, kat))],
+    }),
+    el('div', { class: 'quiz' }, [
+      kat && el('div', { class: 'teller' }, bunke.map((_, n) =>
+        el('i', { 'data-na': n === i ? 'ja' : null }))),
+      el('div', { class: 'kortet' }, [
+        el('h2', { text: spm.t }),
+        felt,
+      ]),
+      el('div', { class: 'stegrad' }, [
+        el('button', { class: 'hoved', type: 'button', onclick: lagre, text: 'Lagre' }),
+        kat && i + 1 < bunke.length
+          ? el('button', { class: 'blank', type: 'button', onclick: () => visSpørsmål(t, bunke, i + 1, kat, null), text: 'Neste →' })
+          : el('button', { class: 'blank', type: 'button', onclick: () => visQuiz(t, kat), text: 'Tilbake' }),
+      ]),
+    ]),
+  );
+  felt.focus();
 }
 
 async function visArsbok(t, ar) {
@@ -1306,15 +1390,60 @@ function faneMeldinger(t) {
 
   const felt = el('textarea', { id: 'melding', class: 'vokser', placeholder: 'Skriv noe …', rows: 1 });
   voksende(felt);
+
+  // Vedleggene lastes opp med én gang de velges, men festes ikke til noe før
+  // meldingen sendes. Utkastet står altså i lista her, ikke i samtalen.
+  const utkast = [];
+  const utkastrad = el('div', { class: 'utkastfiler', hidden: true });
+
+  function tegnUtkast() {
+    utkastrad.hidden = !utkast.length;
+    utkastrad.replaceChildren(...utkast.map((v) => el('figure', {}, [
+      v.slag === 'lyd'
+        ? el('div', { class: 'merke-lyd', text: '🎙' })
+        : el('img', { src: `/api/fil/${v.id}`, alt: 'Vedlegg' }),
+      el('button', {
+        type: 'button', text: '×', 'aria-label': 'Fjern vedlegget',
+        onclick: () => {
+          api(`/fil/${v.id}`, { metode: 'DELETE' }).catch(() => {});
+          utkast.splice(utkast.indexOf(v), 1);
+          tegnUtkast();
+        },
+      }),
+    ])));
+  }
+
   const send = async () => {
     const tekst = felt.value.trim();
-    if (!tekst) return;
+    if (!tekst && !utkast.length) return;
+    const filer = utkast.map((v) => v.id);
     felt.value = '';
-    try { await api('/melding', { metode: 'POST', kropp: { tekst } }); await start(); }
+    felt.style.height = 'auto';
+    utkast.length = 0;
+    tegnUtkast();
+    try { await api('/melding', { metode: 'POST', kropp: { tekst, filer } }); await start(); }
     catch (e) { si(e.message); }
   };
   felt.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+  });
+
+  const velger = KAN_FILER && el('input', {
+    type: 'file', accept: 'image/*', multiple: true, style: 'display:none',
+    onchange: async (e) => {
+      const valgte = [...(e.target.files ?? [])].slice(0, 6 - utkast.length);
+      e.target.value = '';
+      if (!valgte.length) return si(utkast.length ? 'Seks vedlegg er nok på én melding.' : 'Ingen bilde valgt.');
+      si(valgte.length > 1 ? 'Laster opp bildene …' : 'Laster opp …');
+      for (const fil of valgte) {
+        try {
+          const liten = await krympBilde(fil);
+          utkast.push(await lastOpp('/melding/fil?slag=bilde', liten, 'image/jpeg'));
+          tegnUtkast();
+        } catch (feil) { si(feil.message); }
+      }
+      felt.focus();
+    },
   });
 
   tegn(
@@ -1322,10 +1451,18 @@ function faneMeldinger(t) {
     el('div', { class: 'chat' }, [
       t.meldinger.length
         ? samtale(t)
-        : el('p', { class: 'svak liten midt', style: 'margin:3rem 0', text: 'Ingen meldinger ennå. Begynn du.' }),
-      el('div', { class: 'skrivefelt' }, [
-        felt,
-        el('button', { class: 'hoved', type: 'button', onclick: send, 'aria-label': 'Send', text: '↑' }),
+        : el('p', { class: 'svak liten midt tomt', text: 'Ingen meldinger ennå. Begynn du.' }),
+      el('div', { class: 'skrivebunn' }, [
+        utkastrad,
+        el('div', { class: 'skrivefelt' }, [
+          velger || null,
+          velger && el('button', {
+            class: 'blank fest', type: 'button', onclick: () => velger.click(),
+            'aria-label': 'Legg ved bilde', title: 'Legg ved bilde',
+          }, [IKONER.binders()]),
+          felt,
+          el('button', { class: 'hoved', type: 'button', onclick: send, 'aria-label': 'Send', text: '↑' }),
+        ]),
       ]),
     ]),
   );
@@ -1351,8 +1488,20 @@ function samtale(t) {
         },
       })));
 
+    const filer = m.filer ?? [];
+    // Serveren setter 📷 som tekst når meldingen bare var et bilde. Da er
+    // bildet meldingen, og teksten står bare i veien.
+    const tekst = filer.length && m.tekst === '📷' ? null : m.tekst;
+
     const boble = el('div', { class: 'boble', 'data-min': m.fra === t.hvem ? 'ja' : 'nei' }, [
-      m.tekst,
+      filer.length
+        ? el('div', { class: 'vedlegg' }, filer.map((f) => (f.slag === 'lyd'
+          ? el('audio', { controls: true, src: `/api/fil/${f.id}`, preload: 'none' })
+          : el('a', { href: `/api/fil/${f.id}`, target: '_blank', rel: 'noreferrer' }, [
+            el('img', { src: `/api/fil/${f.id}`, alt: 'Vedlegg', loading: 'lazy' }),
+          ]))))
+        : null,
+      tekst,
       el('time', { datetime: m.laget_kl, text: `${kortDato(m.laget_kl.slice(0, 10))} ${klokkeslett(m.laget_kl)}` }),
       (m.reaksjoner ?? []).length
         ? el('div', { class: 'reaksjoner' }, [...new Set(m.reaksjoner.map((r) => r.tegn))])
