@@ -11,13 +11,19 @@ compatibility_date = "2025-09-01"
 # offentlige, og en privat dagbok har ingenting der å gjøre.
 preview_urls = false
 
-# Tjenesten er tatt av nett. Den lever videre med hemmeligheter, database og
-# cron, men svarer ikke på noen adresse. Sett denne til true igjen for å åpne.
-workers_dev = false
+# Adressen svarer, men appen er stengt – se STENGT under. Å slå av adressen
+# helt er ikke det samme som å stenge: da får en installert kopi aldri vite at
+# siden er borte, og blir stående og vise seg selv fra telefonens eget lager.
+workers_dev = true
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# Cloudflare serverer statiske filer før worker-en kjører. Da ville en
+# forespørsel etter «/» fått index.html rett fra lageret, uten å passere
+# porten i src/worker.js – og en stengt app ville servert seg selv likevel.
+# Lokal-serveren ruter alt gjennom worker-en og viser ikke den forskjellen.
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"

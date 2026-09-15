@@ -85,9 +85,12 @@ beforeEach(() => {
       delete: async (n) => { lager.delete(n); },
     },
     ASSETS: {
-      fetch: async (req) => (String(req.url).endsWith('/stengt.html')
-        ? new Response('<h1>Stengt</h1>', { headers: { 'Content-Type': 'text/html' } })
-        : new Response('skall')),
+      fetch: async (req) => {
+        const u = String(req.url);
+        if (u.endsWith('/stengt.html')) return new Response('<h1>Stengt</h1>', { headers: { 'Content-Type': 'text/html' } });
+        if (u.endsWith('/sw-stengt.js')) return new Response('self.addEventListener("install", () => self.skipWaiting());');
+        return new Response('skall');
+      },
     },
     KODE_FORFATTER: 'forfatter-kode',
     KODE_LESER: 'leser-kode',
@@ -1998,4 +2001,20 @@ test('å åpne igjen er én verdi, og alt er som før', async () => {
   assert.equal((await side()).status, 200);
   const cookie = await loggInn('forfatter');
   assert.equal((await kall('/tilstand', { cookie })).status, 200);
+});
+
+test('stengt: service workeren slipper gjennom, ellers kommer ingen seg ut', async () => {
+  env.STENGT = 'ja';
+  const svar = await eiendel('/sw.js');
+  // Stenges denne også, får en installert kopi aldri vite at siden er borte.
+  assert.equal(svar.status, 200, 'sw.js må serveres, ikke stenges');
+  assert.match(svar.headers.get('Content-Type'), /javascript/);
+  assert.equal(svar.headers.get('Cache-Control'), 'no-store');
+  assert.match(await svar.text(), /skipWaiting/);
+});
+
+test('åpen app serverer sin egen service worker', async () => {
+  const svar = await eiendel('/sw.js');
+  assert.equal(svar.status, 200);
+  assert.equal(await svar.text(), 'skall', 'da kommer den fra public/, som alt annet');
 });

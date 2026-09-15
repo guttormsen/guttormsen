@@ -1501,6 +1501,22 @@ const vilHaSide = (req) =>
 
 async function stengtSvar(req, env) {
   const hoder = { 'Cache-Control': 'no-store' };
+  const sti = new URL(req.url).pathname;
+
+  // Én fil må slippe gjennom: service workeren. Stenger vi den også, får en
+  // installert kopi aldri vite at siden er borte – nettleseren henter jo nettopp
+  // denne fila for å se etter en ny versjon. Den den får, er en som rydder seg
+  // selv bort. Det er billetten ut for telefoner som står og viser en gammel app.
+  if (sti === '/sw.js') {
+    const rydd = await env.ASSETS.fetch(new Request(new URL('/sw-stengt.js', req.url)));
+    if (rydd.ok) {
+      return new Response(await rydd.text(), {
+        status: 200,
+        headers: { ...hoder, 'Content-Type': 'text/javascript; charset=utf-8' },
+      });
+    }
+  }
+
   if (!vilHaSide(req)) {
     return new Response('Stengt.', { status: 410, headers: { ...hoder, 'Content-Type': 'text/plain; charset=utf-8' } });
   }
